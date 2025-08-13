@@ -1,0 +1,119 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Go workspace file
+go.work
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Build directories
+/bin/
+/build/
+/dist/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Coverage files
+coverage.out
+coverage.html
+*.coverprofile
+
+# Profiling files
+*.prof
+*.pprof
+cpu.prof
+mem.prof
+
+# Test cache
+.cache/
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+
+# Configuration files (if they contain sensitive data)
+config.local.yaml
+config.local.json
+.env
+.env.local
+
+# Release artifacts
+/releases/
+*.tar.gz
+*.zip
+
+# Documentation build output
+/docs/build/
+/docs/.vuepress/dist/
+
+# Test fixtures and temporary test data
+/test/temp/
+/testdata/temp/
+
+# Go mod download cache
+/pkg/mod/
+
+# Air live reload tool
+.air.toml
+tmp/
+
+# Delve debugger
+debug
+__debug_bin
+
+# GoLand IDE
+/.idea/
+
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# Claude Code related files
+CLAUDE.md
+.claude/
+claude_*
+*_claude*
+.claude_*
