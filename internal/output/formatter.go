@@ -65,12 +65,37 @@ func (f *Formatter) FormatBlocksReport(blocks []types.BlockInfo) (string, error)
 	}
 }
 
-func (f *Formatter) formatJSON(data interface{}) (string, error) {
+func (f *Formatter) FormatJSON(data interface{}) (string, error) {
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return "", err
 	}
 	return string(jsonData), nil
+}
+
+func (f *Formatter) formatJSON(data interface{}) (string, error) {
+	return f.FormatJSON(data)
+}
+
+func (f *Formatter) FormatCSV(data [][]string) (string, error) {
+	var output strings.Builder
+	for _, row := range data {
+		for i, cell := range row {
+			if i > 0 {
+				output.WriteString(",")
+			}
+			// Escape quotes in cells
+			if strings.Contains(cell, "\"") || strings.Contains(cell, ",") || strings.Contains(cell, "\n") {
+				output.WriteString("\"")
+				output.WriteString(strings.ReplaceAll(cell, "\"", "\"\""))
+				output.WriteString("\"")
+			} else {
+				output.WriteString(cell)
+			}
+		}
+		output.WriteString("\n")
+	}
+	return output.String(), nil
 }
 
 func (f *Formatter) formatTable(report types.UsageReport) (string, error) {

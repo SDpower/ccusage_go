@@ -6,12 +6,14 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/renderer"
 	"github.com/olekukonko/tablewriter/tw"
+	"github.com/sdpower/ccusage-go/internal/calculator"
 	"github.com/sdpower/ccusage-go/internal/types"
 )
 
@@ -26,6 +28,17 @@ func NewTableWriterFormatter(noColor bool) *TableWriterFormatter {
 		noColor:  noColor,
 		timezone: time.Local, // Default to local timezone
 	}
+}
+
+// formatNumberWithCommas formats a number with thousand separators
+func formatNumberWithCommas(n int) string {
+	if n < 0 {
+		return "-" + formatNumberWithCommas(-n)
+	}
+	if n < 1000 {
+		return strconv.Itoa(n)
+	}
+	return formatNumberWithCommas(n/1000) + "," + fmt.Sprintf("%03d", n%1000)
 }
 
 func (f *TableWriterFormatter) SetTimezone(loc *time.Location) {
@@ -957,6 +970,407 @@ func (f *TableWriterFormatter) formatEmptySessionReport() string {
 	output.WriteString(" ╰───────────────────────────────────────────────╯\n\n")
 	
 	output.WriteString("No session data found for the specified criteria.\n")
+	
+	return output.String()
+}
+
+// FormatBlocksReport formats session blocks report in table format
+func (f *TableWriterFormatter) FormatBlocksReport(blocks []types.SessionBlock, tokenLimit int) string {
+	if len(blocks) == 0 {
+		return f.formatEmptyBlocksReport()
+	}
+
+	var output strings.Builder
+	
+	// Title box
+	output.WriteString("\n")
+	output.WriteString(" ╭───────────────────────────────────────────────────╮\n")
+	output.WriteString(" │                                                   │\n")
+	output.WriteString(" │  Claude Code Token Usage Report - Session Blocks  │\n")
+	output.WriteString(" │                                                   │\n")
+	output.WriteString(" ╰───────────────────────────────────────────────────╯\n\n")
+
+	// Create table buffer
+	var buf bytes.Buffer
+	
+	// Create table with tablewriter v1.0.9 API
+	table := tablewriter.NewTable(&buf,
+		tablewriter.WithRenderer(renderer.NewBlueprint(tw.Rendition{
+			Settings: tw.Settings{Separators: tw.Separators{BetweenRows: tw.On}},
+		})),
+		tablewriter.WithConfig(tablewriter.Config{
+			Row: tw.CellConfig{
+				Alignment: tw.CellAlignment{Global: tw.AlignRight},
+			},
+		}),
+		tablewriter.WithHeaderAutoFormat(tw.Off), // Disable auto uppercase
+	)
+	
+	// Build headers dynamically
+	headers := []string{
+		"Block Start",
+		"Duration/Status",
+		"Models",
+		"Tokens",
+	}
+	
+	// Add % column if token limit is set
+	if tokenLimit > 0 {
+		headers = append(headers, "%")
+	}
+	
+	headers = append(headers, "Cost")
+	
+	table.Header(headers)
+	
+	// Process each block
+	for _, block := range blocks {
+		if block.IsGap {
+			// Gap row
+			row := []string{
+				f.formatBlockTime(block, false),
+				"(inactive)",
+				"-",
+				"-",
+			}
+			if tokenLimit > 0 {
+				row = append(row, "-")
+			}
+			row = append(row, "-")
+			
+			// Add gray coloring in post-processing
+			table.Append(row)
+		} else {
+			totalTokens := block.TokenCounts.GetTotal()
+			
+			// Format time
+			timeStr := f.formatBlockTime(block, false)
+			
+			// Status/Duration
+			var statusStr string
+			if block.IsActive {
+				statusStr = "ACTIVE" // Will be colored green later
+			} else {
+				statusStr = ""
+			}
+			
+			// Format models
+			modelsStr := f.formatBlockModels(block.Models)
+			
+			// Format tokens
+			tokensStr := formatNumberWithCommas(totalTokens)
+			
+			// Build row
+			row := []string{
+				timeStr,
+				statusStr,
+				modelsStr,
+				tokensStr,
+			}
+			
+			// Add percentage if token limit is set
+			if tokenLimit > 0 {
+				percentage := float64(totalTokens) / float64(tokenLimit) * 100
+				percentStr := fmt.Sprintf("%.1f%%", percentage)
+				row = append(row, percentStr)
+			}
+			
+			// Add cost
+			costStr := fmt.Sprintf("$%.2f", block.CostUSD)
+			row = append(row, costStr)
+			
+			table.Append(row)
+			
+			// Add REMAINING and PROJECTED rows for active blocks
+			if block.IsActive {
+				// REMAINING row - only show if token limit is set
+				if tokenLimit > 0 {
+					currentTokens := totalTokens
+					remainingTokens := tokenLimit - currentTokens
+					if remainingTokens < 0 {
+						remainingTokens = 0
+					}
+					
+					remainingPercent := float64(remainingTokens) / float64(tokenLimit) * 100
+					
+					remainingRow := []string{
+						fmt.Sprintf("(assuming %s token limit)", formatNumberWithCommas(tokenLimit)),
+						"REMAINING", // Will be colored blue
+						"",
+						formatNumberWithCommas(remainingTokens),
+						fmt.Sprintf("%.1f%%", remainingPercent),
+						"",
+					}
+					table.Append(remainingRow)
+				}
+				
+				// PROJECTED row
+				if projection := calculator.ProjectBlockUsage(block); projection != nil {
+					projectedRow := []string{
+						"(assuming current burn rate)",
+						"PROJECTED", // Will be colored yellow
+						"",
+						formatNumberWithCommas(projection.TotalTokens),
+					}
+					
+					if tokenLimit > 0 {
+						percentage := float64(projection.TotalTokens) / float64(tokenLimit) * 100
+						projectedRow = append(projectedRow, fmt.Sprintf("%.1f%%", percentage))
+					}
+					
+					projectedRow = append(projectedRow, fmt.Sprintf("$%.2f", projection.TotalCost))
+					table.Append(projectedRow)
+				}
+			}
+		}
+	}
+	
+	// Render the table
+	table.Render()
+	tableOutput := buf.String()
+	
+	// Apply coloring if not disabled
+	if !f.noColor {
+		var coloredOutput strings.Builder
+		lines := strings.Split(tableOutput, "\n")
+		
+		// ANSI color codes
+		gray := "\033[90m"
+		cyan := "\033[36m"
+		green := "\033[32m"
+		yellow := "\033[33m"
+		blue := "\033[34m"
+		red := "\033[31m"
+		reset := "\033[0m"
+		
+		for i, line := range lines {
+			// Check if this is a pure border line
+			if strings.HasPrefix(line, "┌") || strings.HasPrefix(line, "├") || strings.HasPrefix(line, "└") {
+				coloredOutput.WriteString(gray + line + reset)
+			} else if strings.Contains(line, "│") {
+				// Line with data and borders
+				
+				// Check for special rows
+				if strings.Contains(line, "(inactive)") {
+					// Gap row - all gray
+					coloredOutput.WriteString(gray + line + reset)
+				} else if strings.Contains(line, "ACTIVE") {
+					// Active block row
+					parts := strings.Split(line, "│")
+					for j, part := range parts {
+						if j > 0 {
+							coloredOutput.WriteString(gray + "│" + reset)
+						}
+						
+						if strings.Contains(part, "ACTIVE") {
+							// Replace ACTIVE with green colored version
+							colored := strings.Replace(part, "ACTIVE", green+"ACTIVE"+reset, 1)
+							coloredOutput.WriteString(colored)
+						} else if i <= 2 && strings.TrimSpace(part) != "" {
+							// Header rows - use cyan
+							coloredOutput.WriteString(cyan + part + reset)
+						} else {
+							coloredOutput.WriteString(part)
+						}
+					}
+				} else if strings.Contains(line, "REMAINING") {
+					// Remaining row
+					parts := strings.Split(line, "│")
+					for j, part := range parts {
+						if j > 0 {
+							coloredOutput.WriteString(gray + "│" + reset)
+						}
+						
+						if strings.Contains(part, "REMAINING") {
+							colored := strings.Replace(part, "REMAINING", blue+"REMAINING"+reset, 1)
+							coloredOutput.WriteString(colored)
+						} else if strings.Contains(part, "(assuming") {
+							coloredOutput.WriteString(gray + part + reset)
+						} else {
+							coloredOutput.WriteString(part)
+						}
+					}
+				} else if strings.Contains(line, "PROJECTED") {
+					// Projected row
+					parts := strings.Split(line, "│")
+					for j, part := range parts {
+						if j > 0 {
+							coloredOutput.WriteString(gray + "│" + reset)
+						}
+						
+						if strings.Contains(part, "PROJECTED") {
+							colored := strings.Replace(part, "PROJECTED", yellow+"PROJECTED"+reset, 1)
+							coloredOutput.WriteString(colored)
+						} else if strings.Contains(part, "(assuming") {
+							coloredOutput.WriteString(gray + part + reset)
+						} else {
+							// Check if this is a token value that exceeds limit
+							trimmed := strings.TrimSpace(part)
+							if tokenLimit > 0 && j == 4 { // Tokens column
+								// Try to parse the number
+								numStr := strings.ReplaceAll(trimmed, ",", "")
+								if num, err := strconv.Atoi(numStr); err == nil && num > tokenLimit {
+									coloredOutput.WriteString(red + part + reset)
+								} else {
+									coloredOutput.WriteString(part)
+								}
+							} else {
+								coloredOutput.WriteString(part)
+							}
+						}
+					}
+				} else {
+					// Regular data row
+					parts := strings.Split(line, "│")
+					for j, part := range parts {
+						if j > 0 {
+							coloredOutput.WriteString(gray + "│" + reset)
+						}
+						
+						if i <= 2 && strings.TrimSpace(part) != "" {
+							// Header rows - use cyan
+							coloredOutput.WriteString(cyan + part + reset)
+						} else {
+							// Check for percentage over 100%
+							trimmed := strings.TrimSpace(part)
+							if strings.HasSuffix(trimmed, "%") {
+								percentStr := strings.TrimSuffix(trimmed, "%")
+								if percent, err := strconv.ParseFloat(percentStr, 64); err == nil && percent > 100 {
+									coloredOutput.WriteString(red + part + reset)
+								} else {
+									coloredOutput.WriteString(part)
+								}
+							} else {
+								coloredOutput.WriteString(part)
+							}
+						}
+					}
+				}
+			} else {
+				coloredOutput.WriteString(line)
+			}
+			
+			if i < len(lines)-1 {
+				coloredOutput.WriteString("\n")
+			}
+		}
+		
+		output.WriteString(coloredOutput.String())
+	} else {
+		output.WriteString(tableOutput)
+	}
+	
+	return output.String()
+}
+
+func (f *TableWriterFormatter) formatBlockTime(block types.SessionBlock, compact bool) string {
+	start := block.StartTime.In(f.timezone)
+	
+	if block.IsGap {
+		end := block.EndTime.In(f.timezone)
+		duration := end.Sub(start)
+		hours := int(duration.Hours())
+		
+		if compact {
+			return fmt.Sprintf("%s - %s\n(%dh gap)",
+				start.Format("01/02, 3:04 PM"),
+				end.Format("3:04 PM"),
+				hours)
+		}
+		return fmt.Sprintf("%s - %s (%dh gap)",
+			start.Format("2006-01-02, 3:04:05 PM"),
+			end.Format("2006-01-02, 3:04:05 PM"),
+			hours)
+	}
+	
+	// For non-gap blocks
+	var duration time.Duration
+	if block.ActualEndTime != nil {
+		duration = block.ActualEndTime.Sub(block.StartTime)
+	} else {
+		duration = time.Since(block.StartTime)
+	}
+	
+	hours := int(duration.Hours())
+	minutes := int(duration.Minutes()) % 60
+	
+	if block.IsActive {
+		now := time.Now()
+		elapsed := now.Sub(block.StartTime)
+		remaining := block.EndTime.Sub(now)
+		
+		elapsedHours := int(elapsed.Hours())
+		elapsedMins := int(elapsed.Minutes()) % 60
+		remainingHours := int(remaining.Hours())
+		remainingMins := int(remaining.Minutes()) % 60
+		
+		if compact {
+			return fmt.Sprintf("%s\n(%dh%dm/%dh%dm)",
+				start.Format("01/02, 3:04 PM"),
+				elapsedHours, elapsedMins,
+				remainingHours, remainingMins)
+		}
+		return fmt.Sprintf("%s (%dh %dm elapsed, %dh %dm remaining)",
+			start.Format("2006-01-02, 3:04:05 PM"),
+			elapsedHours, elapsedMins,
+			remainingHours, remainingMins)
+	}
+	
+	if compact {
+		if hours > 0 {
+			return fmt.Sprintf("%s (%dh %dm)",
+				start.Format("01/02, 3:04 PM"),
+				hours, minutes)
+		}
+		return fmt.Sprintf("%s (%dm)",
+			start.Format("01/02, 3:04 PM"),
+			minutes)
+	}
+	
+	if hours > 0 {
+		return fmt.Sprintf("%s (%dh %dm)",
+			start.Format("2006-01-02, 3:00:00 PM"),
+			hours, minutes)
+	}
+	return fmt.Sprintf("%s (%dm)",
+		start.Format("2006-01-02, 3:00:00 PM"),
+		minutes)
+}
+
+func (f *TableWriterFormatter) formatBlockModels(models []string) string {
+	if len(models) == 0 {
+		return "-"
+	}
+	
+	// Simplify model names
+	simplifiedModels := make(map[string]bool)
+	for _, model := range models {
+		shortModel := f.shortenModelName(model)
+		simplifiedModels[shortModel] = true
+	}
+	
+	// Convert to sorted slice
+	var uniqueModels []string
+	for model := range simplifiedModels {
+		uniqueModels = append(uniqueModels, model)
+	}
+	sort.Strings(uniqueModels)
+	
+	// Format with bullet points like TypeScript version
+	return "- " + strings.Join(uniqueModels, "\n- ")
+}
+
+func (f *TableWriterFormatter) formatEmptyBlocksReport() string {
+	var output strings.Builder
+	
+	output.WriteString("\n")
+	output.WriteString(" ╭───────────────────────────────────────────────────╮\n")
+	output.WriteString(" │                                                   │\n")
+	output.WriteString(" │  Claude Code Token Usage Report - Session Blocks  │\n")
+	output.WriteString(" │                                                   │\n")
+	output.WriteString(" ╰───────────────────────────────────────────────────╯\n\n")
+	
+	output.WriteString("No session blocks found for the specified criteria.\n")
 	
 	return output.String()
 }
