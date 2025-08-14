@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -77,6 +78,7 @@ func (f *TableWriterFormatter) FormatDailyReportWithFilter(entries []types.Usage
 				Alignment: tw.CellAlignment{Global: tw.AlignRight},
 			},
 		}),
+		tablewriter.WithHeaderAutoFormat(tw.Off), // Disable auto uppercase
 	)
 	
 	// Set headers with multi-line support
@@ -86,7 +88,7 @@ func (f *TableWriterFormatter) FormatDailyReportWithFilter(entries []types.Usage
 		"Input\n",
 		"Output\n",
 		"Cache\nCreate",
-		"Cache Read\n",
+		"Cache\nRead",
 		"Total\nTokens",
 		"Cost\n(USD)",
 	})
@@ -317,6 +319,7 @@ func (f *TableWriterFormatter) FormatMonthlyReportWithFilter(entries []types.Usa
 				Alignment: tw.CellAlignment{Global: tw.AlignRight},
 			},
 		}),
+		tablewriter.WithHeaderAutoFormat(tw.Off), // Disable auto uppercase
 	)
 	
 	// Set headers with multi-line support
@@ -326,7 +329,7 @@ func (f *TableWriterFormatter) FormatMonthlyReportWithFilter(entries []types.Usa
 		"Input\n",
 		"Output\n",
 		"Cache\nCreate",
-		"Cache Read\n",
+		"Cache\nRead",
 		"Total\nTokens",
 		"Cost\n(USD)",
 	})
@@ -608,4 +611,352 @@ func (f *TableWriterFormatter) formatLargeNumber(n int) string {
 	}
 	
 	return string(result)
+}
+
+func (f *TableWriterFormatter) FormatSessionReport(sessions []types.SessionInfo) string {
+	return f.FormatSessionReportWithFilter(sessions, "", "")
+}
+
+func (f *TableWriterFormatter) FormatSessionReportWithFilter(sessions []types.SessionInfo, since, until string) string {
+	if len(sessions) == 0 {
+		return f.formatEmptySessionReport()
+	}
+
+	var output strings.Builder
+	
+	// Title - use default white color
+	output.WriteString(" ╭───────────────────────────────────────────────╮\n")
+	output.WriteString(" │                                               │\n")
+	output.WriteString(" │  Claude Code Token Usage Report - By Session  │\n")
+	output.WriteString(" │                                               │\n")
+	output.WriteString(" ╰───────────────────────────────────────────────╯\n\n")
+
+	// Create table buffer
+	var buf bytes.Buffer
+	
+	// Create table with tablewriter v1.0.9 API
+	table := tablewriter.NewTable(&buf,
+		tablewriter.WithRenderer(renderer.NewBlueprint(tw.Rendition{
+			Settings: tw.Settings{Separators: tw.Separators{BetweenRows: tw.On}},
+		})),
+		tablewriter.WithConfig(tablewriter.Config{
+			Row: tw.CellConfig{
+				Alignment: tw.CellAlignment{Global: tw.AlignRight},
+			},
+		}),
+		tablewriter.WithHeaderAutoFormat(tw.Off), // Disable auto uppercase
+	)
+	
+	// Set headers with multi-line support
+	table.Header([]string{
+		"Session\n",
+		"Models\n",
+		"Input\n",
+		"Output\n",
+		"Cache\nCreate",
+		"Cache\nRead",
+		"Total\nTokens",
+		"Cost\n(USD)",
+		"Last\nActivity",
+	})
+	
+	var totalInput, totalOutput, totalCache, totalCacheRead, totalTokens int
+	var totalCost float64
+	
+	// Process each session
+	for _, session := range sessions {
+		// Apply date filter if specified
+		lastActivity := session.LastActivity.Format("2006-01-02")
+		if since != "" && lastActivity < since {
+			continue
+		}
+		if until != "" && lastActivity > until {
+			continue
+		}
+		
+		// Extract project name from session ID or project path
+		sessionDisplay := f.extractSessionDisplayName(session.SessionID, session.ProjectPath)
+		
+		// Format models list (same logic as daily format)
+		simplifiedModels := make(map[string]bool)
+		for _, model := range session.ModelsUsed {
+			shortModel := f.shortenModelName(model)
+			simplifiedModels[shortModel] = true
+		}
+		
+		var models []string
+		for model := range simplifiedModels {
+			models = append(models, model)
+		}
+		sort.Strings(models)
+		modelsStr := "- " + strings.Join(models, "\n- ")
+		if len(models) == 0 {
+			modelsStr = "-"
+		}
+		
+		totalInput += session.InputTokens
+		totalOutput += session.OutputTokens
+		totalCache += session.CacheCreationTokens
+		totalCacheRead += session.CacheReadTokens
+		totalTokens += session.TotalTokens
+		totalCost += session.TotalCost
+		
+		// Add row to table
+		table.Append([]string{
+			sessionDisplay,
+			modelsStr,
+			f.formatLargeNumber(session.InputTokens),
+			f.formatLargeNumber(session.OutputTokens),
+			f.formatLargeNumber(session.CacheCreationTokens),
+			f.formatLargeNumber(session.CacheReadTokens),
+			f.formatLargeNumber(session.TotalTokens),
+			fmt.Sprintf("$%.2f", session.TotalCost),
+			lastActivity,
+		})
+	}
+	
+	// Set footer
+	table.Footer([]string{
+		"Total",
+		"",
+		f.formatLargeNumber(totalInput),
+		f.formatLargeNumber(totalOutput),
+		f.formatLargeNumber(totalCache),
+		f.formatLargeNumber(totalCacheRead),
+		f.formatLargeNumber(totalTokens),
+		fmt.Sprintf("$%.2f", totalCost),
+		"",
+	})
+	
+	// Render table
+	table.Render()
+	
+	// Apply color styling if enabled
+	tableOutput := buf.String()
+	if !f.noColor {
+		// Apply colors to table elements (same as daily format)
+		gray := "\033[90m"     // Gray color for borders
+		cyan := "\033[36m"     // Cyan color for headers
+		yellow := "\033[33m"   // Yellow color for Total row
+		reset := "\033[0m"     // Reset color
+		
+		lines := strings.Split(tableOutput, "\n")
+		var coloredOutput strings.Builder
+		
+		for i, line := range lines {
+			if line == "" {
+				coloredOutput.WriteString("\n")
+				continue
+			}
+			
+			// Check if this is a pure border line (no data)
+			if strings.HasPrefix(line, "┌") || strings.HasPrefix(line, "├") || strings.HasPrefix(line, "└") {
+				// Pure border line - all gray
+				coloredOutput.WriteString(gray + line + reset)
+			} else if strings.Contains(line, "│") {
+				// Line with data and borders
+				parts := strings.Split(line, "│")
+				for j, part := range parts {
+					if j > 0 {
+						coloredOutput.WriteString(gray + "│" + reset)
+					}
+					
+					// Check content type
+					if i <= 2 && strings.TrimSpace(part) != "" {
+						// Header rows - use cyan
+						coloredOutput.WriteString(cyan + part + reset)
+					} else if strings.Contains(part, "Total") || (strings.Contains(line, "Total") && strings.TrimSpace(part) != "") {
+						// Total row - use yellow for all content
+						coloredOutput.WriteString(yellow + part + reset)
+					} else {
+						// Regular data - use default color (white)
+						coloredOutput.WriteString(part)
+					}
+				}
+			} else {
+				// Other lines
+				coloredOutput.WriteString(line)
+			}
+			
+			if i < len(lines)-1 {
+				coloredOutput.WriteString("\n")
+			}
+		}
+		
+		output.WriteString(coloredOutput.String())
+	} else {
+		output.WriteString(tableOutput)
+	}
+	
+	return output.String()
+}
+
+func (f *TableWriterFormatter) extractSessionDisplayName(sessionID, projectPath string) string {
+	// sessionID is now the project path itself
+	// Project paths look like: /path/to/projects/project-name
+	// We need to extract just the meaningful project name part
+	
+	if sessionID == "unknown" || sessionID == "" {
+		return "unknown"
+	}
+	
+	// First check if this is a path containing "projects" directory
+	parts := strings.Split(sessionID, string(os.PathSeparator))
+	
+	// Find the "projects" directory
+	projectName := ""
+	for i, part := range parts {
+		if part == "projects" && i+1 < len(parts) {
+			// The next part is the actual project name
+			projectName = parts[i+1]
+			break
+		}
+	}
+	
+	// If no projects directory found, use the last part
+	if projectName == "" {
+		projectName = parts[len(parts)-1]
+	}
+	
+	// Clean up the project name
+	projectName = strings.TrimPrefix(projectName, "-")
+	
+	// Use regex to extract meaningful project name patterns
+	// Pattern 1: Match src-ProjectName or similar patterns
+	srcProjectRe := regexp.MustCompile(`(?:^|-)(?:go_)?(?:src|react_src|python_src)[_-]([A-Za-z][A-Za-z0-9_-]+)`)
+	if matches := srcProjectRe.FindStringSubmatch(projectName); len(matches) > 1 {
+		return "src-" + matches[1]
+	}
+	
+	// Pattern 2: Match blog-category-name pattern (e.g., blog-tech-news)
+	blogRe := regexp.MustCompile(`blog-([a-z]+)-([a-z]+)`)
+	if matches := blogRe.FindStringSubmatch(projectName); len(matches) > 2 {
+		return "blog-" + matches[1] + "-" + matches[2]
+	}
+	
+	// Pattern 3: Extract last meaningful segment that looks like a project name
+	// Skip common path segments and volume identifiers
+	segments := strings.Split(projectName, "-")
+	
+	// Filter out system/path segments using regex
+	systemSegmentRe := regexp.MustCompile(`^(Volumes?|Users?|home|var|tmp|opt|usr|bin|lib|etc|[A-Z0-9]+_[A-Z0-9]+|^\d+[A-Z]+$)$`)
+	userNameRe := regexp.MustCompile(`^[a-z]+$`) // Simple lowercase words are often usernames
+	
+	var meaningfulSegments []string
+	foundSrc := false
+	
+	for i, segment := range segments {
+		// Skip system directories and volume identifiers
+		if systemSegmentRe.MatchString(segment) {
+			continue
+		}
+		
+		// Skip single lowercase words (often usernames) unless they're after "src"
+		if userNameRe.MatchString(segment) && !foundSrc && len(segment) < 8 {
+			continue
+		}
+		
+		// Track if we found "src" or similar
+		if segment == "src" || strings.HasSuffix(segment, "_src") {
+			foundSrc = true
+			// If next segment exists, combine them
+			if i+1 < len(segments) && !systemSegmentRe.MatchString(segments[i+1]) {
+				return "src-" + segments[i+1]
+			}
+		}
+		
+		// Collect meaningful segments
+		if len(segment) > 2 && !systemSegmentRe.MatchString(segment) {
+			meaningfulSegments = append(meaningfulSegments, segment)
+		}
+	}
+	
+	// Return the last meaningful segment(s)
+	if len(meaningfulSegments) > 0 {
+		// If we have multiple meaningful segments, check for common patterns
+		if len(meaningfulSegments) >= 2 {
+			lastTwo := meaningfulSegments[len(meaningfulSegments)-2:]
+			// Check if it's a compound name like "claude-agents" or "ccusage-go"
+			if len(lastTwo[0]) > 2 && len(lastTwo[1]) > 2 {
+				return lastTwo[0] + "-" + lastTwo[1]
+			}
+		}
+		// Return the last meaningful segment
+		return meaningfulSegments[len(meaningfulSegments)-1]
+	}
+	
+	// Final fallback: if nothing meaningful found, return a shortened version
+	if len(segments) > 0 {
+		return segments[len(segments)-1]
+	}
+	
+	return "unknown"
+}
+
+func isDateLike(s string) bool {
+	// Check if string looks like a year (4 digits) or month/day (1-2 digits)
+	if len(s) == 4 || len(s) <= 2 {
+		for _, r := range s {
+			if r < '0' || r > '9' {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func isSystemDirectory(name string) bool {
+	// Common system directories to skip
+	systemDirs := map[string]bool{
+		"home": true, "Users": true, "usr": true, "var": true, 
+		"tmp": true, "opt": true, "etc": true, "lib": true,
+		"bin": true, "sbin": true, "dev": true, "proc": true,
+		"sys": true, "root": true, "mnt": true, "media": true,
+		"Volumes": true, "Applications": true, "Library": true,
+	}
+	return systemDirs[name]
+}
+
+func isUUID(s string) bool {
+	// Simple UUID check: 8-4-4-4-12 format
+	parts := strings.Split(s, "-")
+	return len(parts) == 5 && len(parts[0]) == 8 && len(parts[1]) == 4 && len(parts[2]) == 4 && len(parts[3]) == 4 && len(parts[4]) == 12
+}
+
+func isAllDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
+func isTimestampLike(s string) bool {
+	// Check if string looks like a timestamp (all digits and long)
+	if len(s) < 8 {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func (f *TableWriterFormatter) formatEmptySessionReport() string {
+	var output strings.Builder
+	
+	// Title - use default white color
+	output.WriteString(" ╭───────────────────────────────────────────────╮\n")
+	output.WriteString(" │                                               │\n")
+	output.WriteString(" │  Claude Code Token Usage Report - By Session  │\n")
+	output.WriteString(" │                                               │\n")
+	output.WriteString(" ╰───────────────────────────────────────────────╯\n\n")
+	
+	output.WriteString("No session data found for the specified criteria.\n")
+	
+	return output.String()
 }

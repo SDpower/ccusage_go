@@ -191,6 +191,10 @@ func (l *Loader) loadFileWithDedupe(path string, dedupeMap map[string]bool, dedu
 	}
 	defer file.Close()
 
+	// Extract project path from file path
+	// File path format: /path/to/claude/projects/project-name/YYYY/MM/DD/file.jsonl
+	projectPath := l.extractProjectPath(path)
+
 	var entries []types.UsageEntry
 	scanner := bufio.NewScanner(file)
 	
@@ -219,7 +223,7 @@ func (l *Loader) loadFileWithDedupe(path string, dedupeMap map[string]bool, dedu
 		}
 
 		// Try to parse entry according to TypeScript schema rules
-		entry, err := l.parseEntry(raw)
+		entry, err := l.parseEntry(raw, projectPath)
 		if err != nil {
 			// TypeScript version would skip this line silently
 			// Only count as parse error if it's an actual JSON structure we expect to handle
@@ -280,7 +284,7 @@ func (l *Loader) loadFileWithDedupe(path string, dedupeMap map[string]bool, dedu
 	return entries, nil
 }
 
-func (l *Loader) parseEntry(raw map[string]interface{}) (types.UsageEntry, error) {
+func (l *Loader) parseEntry(raw map[string]interface{}, filePath string) (types.UsageEntry, error) {
 	entry := types.UsageEntry{Raw: raw}
 
 	// Debug: print first entry structure (simple approach for now)
@@ -329,8 +333,11 @@ func (l *Loader) parseEntry(raw map[string]interface{}) (types.UsageEntry, error
 		entry.DateKey = timeInZone.Format("2006-01-02")
 	}
 
-	if projectPath, ok := raw["project_path"].(string); ok {
+	if projectPath, ok := raw["project_path"].(string); ok && projectPath != "" {
 		entry.ProjectPath = projectPath
+	} else {
+		// Use the project path extracted from file path if not in JSON
+		entry.ProjectPath = filePath
 	}
 
 	if model, ok := raw["model"].(string); ok {
@@ -582,6 +589,71 @@ func (l *Loader) validateUsageData(raw map[string]interface{}, entry *types.Usag
 	}
 	
 	return nil
+}
+
+func (l *Loader) extractProjectPath(filePath string) string {
+	// Extract project path from file path
+	// File path format: /path/to/claude/projects/project-name/YYYY/MM/DD/file.jsonl
+	// We want to return the full path including project-name
+	
+	// Remove the filename first
+	dir := filepath.Dir(filePath)
+	parts := strings.Split(dir, string(os.PathSeparator))
+	
+	// Find "projects" directory and include everything up to and including the project
+	for i := 0; i < len(parts); i++ {
+		if parts[i] == "projects" && i+1 < len(parts) {
+			// Check if the structure after projects looks like project/YYYY/MM/DD
+			// If so, we want to include the project directory
+			if i+4 < len(parts) {
+				// Check if parts[i+2], parts[i+3], parts[i+4] look like YYYY/MM/DD
+				possibleYear := parts[i+2]
+				possibleMonth := parts[i+3]
+				possibleDay := parts[i+4]
+				
+				if isNumeric(possibleYear) && len(possibleYear) == 4 &&
+				   isNumeric(possibleMonth) && len(possibleMonth) <= 2 &&
+				   isNumeric(possibleDay) && len(possibleDay) <= 2 {
+					// This looks like the expected structure
+					// Return path up to and including the project directory
+					projectPath := strings.Join(parts[:i+2], string(os.PathSeparator))
+					return projectPath
+				}
+			}
+			// Otherwise just return up to the project directory
+			projectPath := strings.Join(parts[:i+2], string(os.PathSeparator))
+			return projectPath
+		}
+	}
+	
+	// If no "projects" directory, look for common project patterns
+	// Remove date structure from the end if present (YYYY/MM/DD)
+	if len(parts) >= 3 {
+		// Check last 3 parts for date pattern
+		possibleYear := parts[len(parts)-3]
+		possibleMonth := parts[len(parts)-2]
+		possibleDay := parts[len(parts)-1]
+		
+		if isNumeric(possibleYear) && len(possibleYear) == 4 &&
+		   isNumeric(possibleMonth) && len(possibleMonth) <= 2 &&
+		   isNumeric(possibleDay) && len(possibleDay) <= 2 {
+			// Remove date parts to get project directory
+			projectPath := strings.Join(parts[:len(parts)-3], string(os.PathSeparator))
+			return projectPath
+		}
+	}
+	
+	// Fallback: return the directory path as is
+	return dir
+}
+
+func isNumeric(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
 }
 
 // calculateTotalTokens matches TypeScript's getTotalTokens function

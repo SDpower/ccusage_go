@@ -41,14 +41,20 @@ type UsageSummary struct {
 }
 
 type SessionInfo struct {
-	SessionID    string        `json:"session_id"`
-	StartTime    time.Time     `json:"start_time"`
-	EndTime      time.Time     `json:"end_time"`
-	Duration     time.Duration `json:"duration"`
-	TotalCost    float64       `json:"total_cost"`
-	TotalTokens  int           `json:"total_tokens"`
-	RequestCount int           `json:"request_count"`
-	ProjectPath  string        `json:"project_path"`
+	SessionID            string        `json:"session_id"`
+	StartTime            time.Time     `json:"start_time"`
+	EndTime              time.Time     `json:"end_time"`
+	Duration             time.Duration `json:"duration"`
+	TotalCost            float64       `json:"total_cost"`
+	TotalTokens          int           `json:"total_tokens"`
+	InputTokens          int           `json:"input_tokens"`
+	OutputTokens         int           `json:"output_tokens"`
+	CacheCreationTokens  int           `json:"cache_creation_tokens"`
+	CacheReadTokens      int           `json:"cache_read_tokens"`
+	RequestCount         int           `json:"request_count"`
+	ProjectPath          string        `json:"project_path"`
+	ModelsUsed           []string      `json:"models_used"`
+	LastActivity         time.Time     `json:"last_activity"`
 }
 
 type BlockInfo struct {

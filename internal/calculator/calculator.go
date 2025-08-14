@@ -13,7 +13,7 @@ type Calculator struct {
 }
 
 type PricingService interface {
-	GetModelPrice(ctx context.Context, model string) (inputPrice, outputPrice float64, err error)
+	GetModelPrice(ctx context.Context, model string) (inputPrice, outputPrice, cacheCreatePrice, cacheReadPrice float64, err error)
 }
 
 func New(pricingService PricingService) *Calculator {
@@ -25,14 +25,26 @@ func New(pricingService PricingService) *Calculator {
 func (c *Calculator) CalculateCosts(ctx context.Context, entries []types.UsageEntry) ([]types.UsageEntry, error) {
 	for i := range entries {
 		if entries[i].Cost == 0 {
-			inputPrice, outputPrice, err := c.pricingService.GetModelPrice(ctx, entries[i].Model)
+			inputPrice, outputPrice, cacheCreatePrice, cacheReadPrice, err := c.pricingService.GetModelPrice(ctx, entries[i].Model)
 			if err != nil {
 				// Continue without cost if pricing fails
 				continue
 			}
 
-			cost := float64(entries[i].InputTokens)*inputPrice/1000 +
-				float64(entries[i].OutputTokens)*outputPrice/1000
+			// Calculate cost using per-token pricing (not per-1000 tokens)
+			cost := float64(entries[i].InputTokens)*inputPrice +
+				float64(entries[i].OutputTokens)*outputPrice
+			
+			// Add cache token costs if present
+			if entries[i].Raw != nil {
+				if cacheCreate, ok := entries[i].Raw["cache_creation_input_tokens"].(int); ok {
+					cost += float64(cacheCreate) * cacheCreatePrice
+				}
+				if cacheRead, ok := entries[i].Raw["cache_read_input_tokens"].(int); ok {
+					cost += float64(cacheRead) * cacheReadPrice
+				}
+			}
+			
 			entries[i].Cost = cost
 		}
 	}
@@ -45,6 +57,9 @@ func (c *Calculator) GenerateDailyReport(entries []types.UsageEntry, date time.T
 }
 
 func (c *Calculator) GenerateMonthlyReport(entries []types.UsageEntry, year int, month int) types.UsageReport {
+	// Note: Since timezone conversion is now handled at the loader level via DateKey,
+	// this method is primarily used for JSON/CSV output formats.
+	// For table format, entries are already timezone-converted with DateKey set.
 	start := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
 	end := start.AddDate(0, 1, 0)
 
@@ -63,12 +78,18 @@ func (c *Calculator) GenerateWeeklyReport(entries []types.UsageEntry, year int, 
 func (c *Calculator) GenerateSessionReport(entries []types.UsageEntry) []types.SessionInfo {
 	sessionMap := make(map[string][]types.UsageEntry)
 
+	// Group by project path instead of session ID (like TypeScript version)
 	for _, entry := range entries {
-		sessionMap[entry.SessionID] = append(sessionMap[entry.SessionID], entry)
+		// Use project path as the grouping key
+		projectKey := entry.ProjectPath
+		if projectKey == "" {
+			projectKey = "unknown"
+		}
+		sessionMap[projectKey] = append(sessionMap[projectKey], entry)
 	}
 
 	var sessions []types.SessionInfo
-	for sessionID, sessionEntries := range sessionMap {
+	for projectPath, sessionEntries := range sessionMap {
 		if len(sessionEntries) == 0 {
 			continue
 		}
@@ -78,19 +99,46 @@ func (c *Calculator) GenerateSessionReport(entries []types.UsageEntry) []types.S
 		})
 
 		session := types.SessionInfo{
-			SessionID:    sessionID,
+			SessionID:    projectPath, // Use project path as session ID for display
 			StartTime:    sessionEntries[0].Timestamp,
 			EndTime:      sessionEntries[len(sessionEntries)-1].Timestamp,
 			RequestCount: len(sessionEntries),
-			ProjectPath:  sessionEntries[0].ProjectPath,
+			ProjectPath:  projectPath,
+			LastActivity: sessionEntries[len(sessionEntries)-1].Timestamp, // Use last entry timestamp
 		}
 
 		session.Duration = session.EndTime.Sub(session.StartTime)
+		
+		// Track unique models
+		modelSet := make(map[string]bool)
 
 		for _, entry := range sessionEntries {
 			session.TotalCost += entry.Cost
 			session.TotalTokens += entry.TotalTokens
+			session.InputTokens += entry.InputTokens
+			session.OutputTokens += entry.OutputTokens
+			
+			// Track models (exclude synthetic)
+			if entry.Model != "" && entry.Model != "<synthetic>" {
+				modelSet[entry.Model] = true
+			}
+			
+			// Extract cache tokens from Raw data
+			if entry.Raw != nil {
+				if cc, ok := entry.Raw["cache_creation_input_tokens"].(int); ok {
+					session.CacheCreationTokens += cc
+				}
+				if cr, ok := entry.Raw["cache_read_input_tokens"].(int); ok {
+					session.CacheReadTokens += cr
+				}
+			}
 		}
+		
+		// Convert model set to sorted slice
+		for model := range modelSet {
+			session.ModelsUsed = append(session.ModelsUsed, model)
+		}
+		sort.Strings(session.ModelsUsed)
 
 		sessions = append(sessions, session)
 	}
@@ -154,7 +202,9 @@ func (c *Calculator) filterByDate(entries []types.UsageEntry, date time.Time) []
 func (c *Calculator) filterByDateRange(entries []types.UsageEntry, start, end time.Time) []types.UsageEntry {
 	var filtered []types.UsageEntry
 	for _, entry := range entries {
-		if entry.Timestamp.After(start) && entry.Timestamp.Before(end) {
+		// Include entries that are >= start and < end
+		// This ensures we don't miss entries exactly at the start time
+		if (entry.Timestamp.Equal(start) || entry.Timestamp.After(start)) && entry.Timestamp.Before(end) {
 			filtered = append(filtered, entry)
 		}
 	}
@@ -188,7 +238,10 @@ func (c *Calculator) calculateSummary(entries []types.UsageEntry) types.UsageSum
 		summary.InputTokens += entry.InputTokens
 		summary.OutputTokens += entry.OutputTokens
 
-		summary.Models[entry.Model]++
+		// Skip synthetic model in statistics
+		if entry.Model != "<synthetic>" {
+			summary.Models[entry.Model]++
+		}
 		summary.Projects[entry.ProjectPath]++
 	}
 

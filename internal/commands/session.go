@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/sdpower/ccusage-go/internal/calculator"
 	"github.com/sdpower/ccusage-go/internal/loader"
@@ -16,6 +17,9 @@ func NewSessionCommand() *cobra.Command {
 		dataPath   string
 		noColor    bool
 		responsive bool
+		timezone   string
+		since      string
+		until      string
 	)
 
 	cmd := &cobra.Command{
@@ -33,6 +37,15 @@ func NewSessionCommand() *cobra.Command {
 			calc := calculator.New(pricingService)
 			dataLoader := loader.New()
 
+			// Set timezone if specified
+			if timezone != "" {
+				loc, err := time.LoadLocation(timezone)
+				if err != nil {
+					return fmt.Errorf("invalid timezone %s: %w", timezone, err)
+				}
+				dataLoader.SetTimezone(loc)
+			}
+
 			formatter := output.NewFormatter(output.FormatterOptions{
 				Format:     format,
 				NoColor:    noColor,
@@ -43,6 +56,11 @@ func NewSessionCommand() *cobra.Command {
 			entries, err := dataLoader.LoadFromPath(cmd.Context(), dataPath)
 			if err != nil {
 				return fmt.Errorf("failed to load usage data: %w", err)
+			}
+
+			// Apply date filters if specified
+			if since != "" || until != "" {
+				entries = filterEntriesByDate(entries, since, until)
 			}
 
 			// Calculate costs
@@ -69,6 +87,9 @@ func NewSessionCommand() *cobra.Command {
 	cmd.Flags().StringVar(&dataPath, "data-path", "", "Path to Claude data directory")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 	cmd.Flags().BoolVar(&responsive, "responsive", true, "Enable responsive table layout")
+	cmd.Flags().StringVarP(&timezone, "timezone", "z", "", "Timezone for date grouping")
+	cmd.Flags().StringVar(&since, "since", "", "Start date (YYYY-MM-DD)")
+	cmd.Flags().StringVar(&until, "until", "", "End date (YYYY-MM-DD)")
 
 	return cmd
 }
