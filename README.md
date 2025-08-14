@@ -68,7 +68,23 @@ make install
 
 ### Pre-built Binaries
 
-*Coming soon*
+Download from [GitHub Releases](https://github.com/SDpower/ccusage_go/releases)
+
+#### Quick Install (macOS/Linux)
+
+```bash
+# macOS Apple Silicon
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.8.0/ccusage-go-darwin-arm64.tar.gz | tar xz
+sudo mv ccusage-go-darwin-arm64 /usr/local/bin/ccusage-go
+
+# macOS Intel
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.8.0/ccusage-go-darwin-amd64.tar.gz | tar xz
+sudo mv ccusage-go-darwin-amd64 /usr/local/bin/ccusage-go
+
+# Linux x64
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.8.0/ccusage-go-linux-amd64.tar.gz | tar xz
+sudo mv ccusage-go-linux-amd64 /usr/local/bin/ccusage-go
+```
 
 ## Usage
 
@@ -228,6 +244,10 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 - [ ] Add more customization options
 - [ ] Implement `--project` and `--instances` filters
 - [ ] Add internationalization support
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=SDpower/ccusage_go&type=Date)](https://star-history.com/#SDpower/ccusage_go&Date)
 
 ---
 

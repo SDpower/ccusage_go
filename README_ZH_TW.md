@@ -68,7 +68,23 @@ make install
 
 ### 預編譯版本
 
-*即將推出*
+從 [GitHub Releases](https://github.com/SDpower/ccusage_go/releases) 下載
+
+#### 快速安裝 (macOS/Linux)
+
+```bash
+# macOS Apple Silicon
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.8.0/ccusage-go-darwin-arm64.tar.gz | tar xz
+sudo mv ccusage-go-darwin-arm64 /usr/local/bin/ccusage-go
+
+# macOS Intel
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.8.0/ccusage-go-darwin-amd64.tar.gz | tar xz
+sudo mv ccusage-go-darwin-amd64 /usr/local/bin/ccusage-go
+
+# Linux x64
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.8.0/ccusage-go-linux-amd64.tar.gz | tar xz
+sudo mv ccusage-go-linux-amd64 /usr/local/bin/ccusage-go
+```
 
 ## 使用方法
 
@@ -228,6 +244,10 @@ ccusage_go/
 - [ ] 新增更多自訂選項
 - [ ] 實作 `--project` 和 `--instances` 過濾器
 - [ ] 新增國際化支援
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=SDpower/ccusage_go&type=Date)](https://star-history.com/#SDpower/ccusage_go&Date)
 
 ---
 

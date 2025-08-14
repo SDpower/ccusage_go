@@ -1,0 +1,141 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # Linux architectures
+          - goos: linux
+            goarch: amd64
+            output: ccusage-go-linux-amd64
+          - goos: linux
+            goarch: arm64
+            output: ccusage-go-linux-arm64
+          - goos: linux
+            goarch: 386
+            output: ccusage-go-linux-386
+          - goos: linux
+            goarch: arm
+            goarm: 7
+            output: ccusage-go-linux-armv7
+          
+          # macOS (Darwin) architectures
+          - goos: darwin
+            goarch: amd64
+            output: ccusage-go-darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            output: ccusage-go-darwin-arm64
+          
+          # Windows architectures
+          - goos: windows
+            goarch: amd64
+            output: ccusage-go-windows-amd64.exe
+          - goos: windows
+            goarch: 386
+            output: ccusage-go-windows-386.exe
+          - goos: windows
+            goarch: arm64
+            output: ccusage-go-windows-arm64.exe
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          CGO_ENABLED: 0
+        run: |
+          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
+            -o ${{ matrix.output }} \
+            cmd/ccusage/main.go
+          
+      - name: Compress binary
+        if: matrix.goos != 'windows'
+        run: |
+          tar -czf ${{ matrix.output }}.tar.gz ${{ matrix.output }}
+          
+      - name: Compress Windows binary
+        if: matrix.goos == 'windows'
+        run: |
+          zip ${{ matrix.output }}.zip ${{ matrix.output }}
+          
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output }}
+          path: |
+            ${{ matrix.output }}.tar.gz
+            ${{ matrix.output }}.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      
+      - name: List artifacts
+        run: |
+          ls -la artifacts/
+          ls -la artifacts/*/ || true
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          body: |
+            ## ccusage-go ${{ github.ref_name }}
+            
+            ### 🚀 Performance
+            - Memory usage: ~54MB (87% less than TypeScript version)
+            - CPU usage: ~10% (92% less than TypeScript version)
+            
+            ### 📦 Installation
+            
+            #### macOS
+            ```bash
+            # Intel Mac
+            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ccusage-go-darwin-amd64.tar.gz | tar xz
+            
+            # Apple Silicon (M1/M2/M3)
+            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ccusage-go-darwin-arm64.tar.gz | tar xz
+            ```
+            
+            #### Linux
+            ```bash
+            # x64
+            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ccusage-go-linux-amd64.tar.gz | tar xz
+            
+            # ARM64
+            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ccusage-go-linux-arm64.tar.gz | tar xz
+            ```
+            
+            #### Windows
+            Download the appropriate `.zip` file and extract it.
