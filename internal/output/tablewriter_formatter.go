@@ -67,15 +67,15 @@ func (f *TableWriterFormatter) FormatDailyReportWithFilter(entries []types.Usage
 	
 	// Title - use default white color
 	output.WriteString("\n")
-	output.WriteString(" ╭──────────────────────────────────────────╮")
+	output.WriteString(" ╭────────────────────────────────────────────────────╮")
 	output.WriteString("\n")
-	output.WriteString(" │                                          │")
+	output.WriteString(" │                                                    │")
 	output.WriteString("\n")
-	output.WriteString(" │  Claude Code Token Usage Report - Daily  │")
+	output.WriteString(" │  Claude Code Token Usage Report - Daily (WITH GO)  │")
 	output.WriteString("\n")
-	output.WriteString(" │                                          │")
+	output.WriteString(" │                                                    │")
 	output.WriteString("\n")
-	output.WriteString(" ╰──────────────────────────────────────────╯")
+	output.WriteString(" ╰────────────────────────────────────────────────────╯")
 	output.WriteString("\n\n")
 
 	// Create table buffer
@@ -313,11 +313,11 @@ func (f *TableWriterFormatter) FormatMonthlyReportWithFilter(entries []types.Usa
 	var output strings.Builder
 	
 	// Title - use default white color
-	output.WriteString(" ╭───────────────────────────────────────────╮\n")
-	output.WriteString(" │                                           │\n")
-	output.WriteString(" │  Claude Code Token Usage Report - Monthly │\n")
-	output.WriteString(" │                                           │\n")
-	output.WriteString(" ╰───────────────────────────────────────────╯\n\n")
+	output.WriteString(" ╭──────────────────────────────────────────────────────╮\n")
+	output.WriteString(" │                                                      │\n")
+	output.WriteString(" │  Claude Code Token Usage Report - Monthly (WITH GO) │\n")
+	output.WriteString(" │                                                      │\n")
+	output.WriteString(" ╰──────────────────────────────────────────────────────╯\n\n")
 
 	// Create table buffer
 	var buf bytes.Buffer
@@ -538,11 +538,11 @@ func (f *TableWriterFormatter) formatEmptyMonthlyReport() string {
 	var output strings.Builder
 	
 	// Title - use default white color
-	output.WriteString(" ╭───────────────────────────────────────────╮\n")
-	output.WriteString(" │                                           │\n")
-	output.WriteString(" │  Claude Code Token Usage Report - Monthly │\n")
-	output.WriteString(" │                                           │\n")
-	output.WriteString(" ╰───────────────────────────────────────────╯\n\n")
+	output.WriteString(" ╭──────────────────────────────────────────────────────╮\n")
+	output.WriteString(" │                                                      │\n")
+	output.WriteString(" │  Claude Code Token Usage Report - Monthly (WITH GO) │\n")
+	output.WriteString(" │                                                      │\n")
+	output.WriteString(" ╰──────────────────────────────────────────────────────╯\n\n")
 	
 	output.WriteString("No usage data found for the specified criteria.\n")
 	
@@ -554,15 +554,15 @@ func (f *TableWriterFormatter) formatEmptyReport() string {
 	
 	// Title - use default white color
 	output.WriteString("\n")
-	output.WriteString(" ╭──────────────────────────────────────────╮")
+	output.WriteString(" ╭────────────────────────────────────────────────────╮")
 	output.WriteString("\n")
-	output.WriteString(" │                                          │")
+	output.WriteString(" │                                                    │")
 	output.WriteString("\n")
-	output.WriteString(" │  Claude Code Token Usage Report - Daily  │")
+	output.WriteString(" │  Claude Code Token Usage Report - Daily (WITH GO)  │")
 	output.WriteString("\n")
-	output.WriteString(" │                                          │")
+	output.WriteString(" │                                                    │")
 	output.WriteString("\n")
-	output.WriteString(" ╰──────────────────────────────────────────╯")
+	output.WriteString(" ╰────────────────────────────────────────────────────╯")
 	output.WriteString("\n\n")
 	output.WriteString("No usage data found for the specified period.\n")
 	
@@ -638,11 +638,11 @@ func (f *TableWriterFormatter) FormatSessionReportWithFilter(sessions []types.Se
 	var output strings.Builder
 	
 	// Title - use default white color
-	output.WriteString(" ╭───────────────────────────────────────────────╮\n")
-	output.WriteString(" │                                               │\n")
-	output.WriteString(" │  Claude Code Token Usage Report - By Session  │\n")
-	output.WriteString(" │                                               │\n")
-	output.WriteString(" ╰───────────────────────────────────────────────╯\n\n")
+	output.WriteString(" ╭──────────────────────────────────────────────────────────╮\n")
+	output.WriteString(" │                                                          │\n")
+	output.WriteString(" │  Claude Code Token Usage Report - By Session (WITH GO)  │\n")
+	output.WriteString(" │                                                          │\n")
+	output.WriteString(" ╰──────────────────────────────────────────────────────────╯\n\n")
 
 	// Create table buffer
 	var buf bytes.Buffer
@@ -963,11 +963,11 @@ func (f *TableWriterFormatter) formatEmptySessionReport() string {
 	var output strings.Builder
 	
 	// Title - use default white color
-	output.WriteString(" ╭───────────────────────────────────────────────╮\n")
-	output.WriteString(" │                                               │\n")
-	output.WriteString(" │  Claude Code Token Usage Report - By Session  │\n")
-	output.WriteString(" │                                               │\n")
-	output.WriteString(" ╰───────────────────────────────────────────────╯\n\n")
+	output.WriteString(" ╭────────────────────────────────────────────────────────────╮\n")
+	output.WriteString(" │                                                          │\n")
+	output.WriteString(" │  Claude Code Token Usage Report - By Session (WITH GO)  │\n")
+	output.WriteString(" │                                                          │\n")
+	output.WriteString(" ╰────────────────────────────────────────────────────────────╯\n\n")
 	
 	output.WriteString("No session data found for the specified criteria.\n")
 	
@@ -984,11 +984,11 @@ func (f *TableWriterFormatter) FormatBlocksReport(blocks []types.SessionBlock, t
 	
 	// Title box
 	output.WriteString("\n")
-	output.WriteString(" ╭───────────────────────────────────────────────────╮\n")
-	output.WriteString(" │                                                   │\n")
-	output.WriteString(" │  Claude Code Token Usage Report - Session Blocks  │\n")
-	output.WriteString(" │                                                   │\n")
-	output.WriteString(" ╰───────────────────────────────────────────────────╯\n\n")
+	output.WriteString(" ╭───────────────────────────────────────────────────────────────╮\n")
+	output.WriteString(" │                                                               │\n")
+	output.WriteString(" │  Claude Code Token Usage Report - Session Blocks (WITH GO)  │\n")
+	output.WriteString(" │                                                               │\n")
+	output.WriteString(" ╰───────────────────────────────────────────────────────────────╯\n\n")
 
 	// Create table buffer
 	var buf bytes.Buffer
@@ -1364,11 +1364,11 @@ func (f *TableWriterFormatter) formatEmptyBlocksReport() string {
 	var output strings.Builder
 	
 	output.WriteString("\n")
-	output.WriteString(" ╭───────────────────────────────────────────────────╮\n")
-	output.WriteString(" │                                                   │\n")
-	output.WriteString(" │  Claude Code Token Usage Report - Session Blocks  │\n")
-	output.WriteString(" │                                                   │\n")
-	output.WriteString(" ╰───────────────────────────────────────────────────╯\n\n")
+	output.WriteString(" ╭───────────────────────────────────────────────────────────────╮\n")
+	output.WriteString(" │                                                               │\n")
+	output.WriteString(" │  Claude Code Token Usage Report - Session Blocks (WITH GO)  │\n")
+	output.WriteString(" │                                                               │\n")
+	output.WriteString(" ╰───────────────────────────────────────────────────────────────╯\n\n")
 	
 	output.WriteString("No session blocks found for the specified criteria.\n")
 	

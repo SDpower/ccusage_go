@@ -37,6 +37,7 @@ func NewBlocksCommand() *cobra.Command {
 		until           string
 		live            bool
 		refreshInterval int
+		gradient        bool
 	)
 
 	cmd := &cobra.Command{
@@ -121,6 +122,7 @@ func NewBlocksCommand() *cobra.Command {
 					SessionLength:   sessionLength,
 					NoColor:         noColor,
 					Timezone:        loc,
+					UseGradient:     gradient,
 				}
 				
 				return monitor.StartBlocksLiveMonitoring(config)
@@ -262,6 +264,7 @@ func NewBlocksCommand() *cobra.Command {
 	cmd.Flags().StringVar(&until, "until", "", "End date filter (YYYY-MM-DD)")
 	cmd.Flags().BoolVar(&live, "live", false, "Live monitoring mode with real-time updates")
 	cmd.Flags().IntVar(&refreshInterval, "refresh-interval", 1, "Refresh interval in seconds for live mode (1-60)")
+	cmd.Flags().BoolVar(&gradient, "gradient", true, "Use gradient colors in progress bars (live mode)")
 
 	return cmd
 }
@@ -272,11 +275,11 @@ func formatActiveBlockDetail(block types.SessionBlock, tokenLimit int, noColor b
 
 	// Title box
 	output.WriteString("\n")
-	output.WriteString(" ╭────────────────────────────────╮\n")
-	output.WriteString(" │                                │\n")
-	output.WriteString(" │  Current Session Block Status  │\n")
-	output.WriteString(" │                                │\n")
-	output.WriteString(" ╰────────────────────────────────╯\n\n")
+	output.WriteString(" ╭───────────────────────────────────────────────╮\n")
+	output.WriteString(" │                                               │\n")
+	output.WriteString(" │  Current Session Block Status (WITH GO)  │\n")
+	output.WriteString(" │                                               │\n")
+	output.WriteString(" ╰───────────────────────────────────────────────╯\n\n")
 
 	now := time.Now()
 	elapsed := now.Sub(block.StartTime)

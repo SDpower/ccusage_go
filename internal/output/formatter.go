@@ -107,7 +107,7 @@ func (f *Formatter) formatTable(report types.UsageReport) (string, error) {
 		headerStyle = headerStyle.Foreground(lipgloss.Color("205"))
 	}
 	
-	output.WriteString(headerStyle.Render(fmt.Sprintf("Usage Report - %s", strings.Title(report.Period))))
+	output.WriteString(headerStyle.Render(fmt.Sprintf("Usage Report - %s (WITH GO)", strings.Title(report.Period))))
 	output.WriteString("\n\n")
 	
 	// Summary
