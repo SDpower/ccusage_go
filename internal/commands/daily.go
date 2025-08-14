@@ -8,6 +8,7 @@ import (
 	"github.com/sdpower/ccusage-go/internal/loader"
 	"github.com/sdpower/ccusage-go/internal/output"
 	"github.com/sdpower/ccusage-go/internal/pricing"
+	"github.com/sdpower/ccusage-go/internal/types"
 	"github.com/spf13/cobra"
 )
 
@@ -66,16 +67,41 @@ func NewDailyCommand() *cobra.Command {
 				return fmt.Errorf("failed to calculate costs: %w", err)
 			}
 
-			// Generate report
-			report := calc.GenerateDailyReport(entries, targetDate)
-
-			// Format and output
-			output, err := formatter.FormatUsageReport(report)
-			if err != nil {
-				return fmt.Errorf("failed to format report: %w", err)
+			// For table format, use the enhanced table formatter
+			if format == "table" {
+				tableFormatter := output.NewTableFormatter(noColor)
+				
+				// If no specific date, show all dates grouped
+				if date == "" {
+					output := tableFormatter.FormatDailyReport(entries)
+					fmt.Print(output)
+				} else {
+					// Filter entries for the target date
+					filteredEntries := []types.UsageEntry{}
+					startOfDay := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, targetDate.Location())
+					endOfDay := startOfDay.Add(24 * time.Hour)
+					
+					for _, entry := range entries {
+						if entry.Timestamp.After(startOfDay) && entry.Timestamp.Before(endOfDay) {
+							filteredEntries = append(filteredEntries, entry)
+						}
+					}
+					
+					output := tableFormatter.FormatDailyReport(filteredEntries)
+					fmt.Print(output)
+				}
+			} else {
+				// Generate report for JSON/CSV
+				report := calc.GenerateDailyReport(entries, targetDate)
+				
+				// Format and output
+				output, err := formatter.FormatUsageReport(report)
+				if err != nil {
+					return fmt.Errorf("failed to format report: %w", err)
+				}
+				
+				fmt.Print(output)
 			}
-
-			fmt.Print(output)
 			return nil
 		},
 	}

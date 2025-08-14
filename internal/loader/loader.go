@@ -179,6 +179,8 @@ func (l *Loader) parseEntry(raw map[string]interface{}) (types.UsageEntry, error
 
 	if cost, ok := raw["cost"].(float64); ok {
 		entry.Cost = cost
+	} else if costUSD, ok := raw["costUSD"].(float64); ok {
+		entry.Cost = costUSD
 	}
 
 	if sessionID, ok := raw["session_id"].(string); ok {
@@ -187,6 +189,17 @@ func (l *Loader) parseEntry(raw map[string]interface{}) (types.UsageEntry, error
 
 	if blockType, ok := raw["block_type"].(string); ok {
 		entry.BlockType = blockType
+	}
+
+	// Parse cache-related fields
+	if cacheCreate, ok := raw["cache_creation_input_tokens"].(float64); ok {
+		// Store in Raw for now
+		entry.Raw["cache_creation_input_tokens"] = int(cacheCreate)
+	}
+
+	if cacheRead, ok := raw["cache_read_input_tokens"].(float64); ok {
+		// Store in Raw for now
+		entry.Raw["cache_read_input_tokens"] = int(cacheRead)
 	}
 
 	return entry, nil
