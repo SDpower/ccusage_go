@@ -15,6 +15,13 @@ import (
 	"github.com/sdpower/ccusage-go/internal/types"
 )
 
+// LoaderOptions configures optional loading behaviors
+type LoaderOptions struct {
+	OnlyActiveSession bool          // Only load active session data
+	ModifiedWithin    time.Duration // Only load files modified within this duration
+	MaxFiles          int           // Maximum number of files to load (0 = unlimited)
+}
+
 type Loader struct {
 	maxWorkers int
 	debug      bool
@@ -38,6 +45,12 @@ func (l *Loader) SetTimezone(timezone *time.Location) {
 }
 
 func (l *Loader) LoadFromPath(ctx context.Context, path string) ([]types.UsageEntry, error) {
+	// Use default options (load all files)
+	return l.LoadFromPathWithOptions(ctx, path, nil)
+}
+
+// LoadFromPathWithOptions loads usage data with optional filters
+func (l *Loader) LoadFromPathWithOptions(ctx context.Context, path string, options *LoaderOptions) ([]types.UsageEntry, error) {
 	// Check if path exists
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		if l.debug {
@@ -52,13 +65,33 @@ func (l *Loader) LoadFromPath(ctx context.Context, path string) ([]types.UsageEn
 		path = projectsPath
 	}
 	
-	paths, err := l.findJSONLFiles(path)
+	// Find files with optional filtering
+	var paths []string
+	var err error
+	if options != nil && (options.OnlyActiveSession || options.ModifiedWithin > 0) {
+		paths, err = l.findJSONLFilesWithFilter(path, options)
+	} else {
+		paths, err = l.findJSONLFiles(path)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to find JSONL files: %w", err)
 	}
 
+	// Apply MaxFiles limit if specified
+	if options != nil && options.MaxFiles > 0 && len(paths) > options.MaxFiles {
+		// Sort by modification time (newest first) and take top MaxFiles
+		sortedPaths, _ := l.sortFilesByModTime(paths)
+		paths = sortedPaths[:options.MaxFiles]
+		if l.debug {
+			fmt.Fprintf(os.Stderr, "Debug: Limited to %d most recent files\n", options.MaxFiles)
+		}
+	}
+
 	if l.debug {
 		fmt.Fprintf(os.Stderr, "Debug: Found %d JSONL files in %s\n", len(paths), path)
+		if options != nil && options.ModifiedWithin > 0 {
+			fmt.Fprintf(os.Stderr, "Debug: Filtered to files modified within %v\n", options.ModifiedWithin)
+		}
 		if len(paths) > 0 && len(paths) <= 5 {
 			for _, p := range paths {
 				fmt.Fprintf(os.Stderr, "  - %s\n", p)
@@ -425,6 +458,196 @@ func (l *Loader) findJSONLFiles(basePath string) ([]string, error) {
 	})
 
 	return files, err
+}
+
+// findJSONLFilesWithFilter finds JSONL files with optional time-based filtering
+func (l *Loader) findJSONLFilesWithFilter(basePath string, options *LoaderOptions) ([]string, error) {
+	var files []string
+	cutoffTime := time.Now().Add(-options.ModifiedWithin)
+	
+	// Two-phase scanning for better performance
+	// Phase 1: Find all project directories
+	projectDirs, err := l.findProjectDirectories(basePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find project directories: %w", err)
+	}
+	
+	if l.debug {
+		fmt.Fprintf(os.Stderr, "Debug: Found %d project directories\n", len(projectDirs))
+	}
+	
+	// Phase 2: Filter projects and collect JSONL files
+	for _, projectDir := range projectDirs {
+		// Quick check if project has recent activity
+		if options.ModifiedWithin > 0 {
+			if shouldSkip := l.shouldSkipProject(projectDir, cutoffTime); shouldSkip {
+				if l.debug {
+					fmt.Fprintf(os.Stderr, "Debug: Skipping inactive project: %s\n", filepath.Base(projectDir))
+				}
+				continue
+			}
+		}
+		
+		// Collect JSONL files from active project
+		projectFiles, err := l.collectProjectFiles(projectDir, cutoffTime, options.ModifiedWithin > 0)
+		if err != nil {
+			if l.debug {
+				fmt.Fprintf(os.Stderr, "Debug: Error reading project %s: %v\n", filepath.Base(projectDir), err)
+			}
+			continue
+		}
+		
+		files = append(files, projectFiles...)
+		
+		if l.debug && len(projectFiles) > 0 {
+			fmt.Fprintf(os.Stderr, "Debug: Project %s has %d recent files\n", 
+				filepath.Base(projectDir), len(projectFiles))
+		}
+	}
+	
+	return files, nil
+}
+
+// findProjectDirectories finds all project directories under the base path
+func (l *Loader) findProjectDirectories(basePath string) ([]string, error) {
+	var projectDirs []string
+	
+	// Read the projects directory
+	entries, err := os.ReadDir(basePath)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Collect all subdirectories (these are project directories in flat structure)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			projectPath := filepath.Join(basePath, entry.Name())
+			projectDirs = append(projectDirs, projectPath)
+		}
+	}
+	
+	return projectDirs, nil
+}
+
+// shouldSkipProject checks if a project directory should be skipped based on activity
+func (l *Loader) shouldSkipProject(projectPath string, cutoffTime time.Time) bool {
+	// Check the most recent file modification time in the project
+	entries, err := os.ReadDir(projectPath)
+	if err != nil {
+		return true // Skip on error
+	}
+	
+	var latestModTime time.Time
+	hasJSONL := false
+	
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".jsonl") {
+			hasJSONL = true
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			if info.ModTime().After(latestModTime) {
+				latestModTime = info.ModTime()
+			}
+			// Early exit if we find a recent file
+			if latestModTime.After(cutoffTime) {
+				return false // Don't skip, has recent activity
+			}
+		}
+	}
+	
+	// Skip if no JSONL files or all files are old
+	return !hasJSONL || latestModTime.Before(cutoffTime)
+}
+
+// collectProjectFiles collects JSONL files from a project directory
+func (l *Loader) collectProjectFiles(projectPath string, cutoffTime time.Time, applyTimeFilter bool) ([]string, error) {
+	var files []string
+	
+	entries, err := os.ReadDir(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue // Skip subdirectories in flat structure
+		}
+		
+		if !strings.HasSuffix(strings.ToLower(entry.Name()), ".jsonl") {
+			continue // Skip non-JSONL files
+		}
+		
+		filePath := filepath.Join(projectPath, entry.Name())
+		
+		// Apply time filter if enabled
+		if applyTimeFilter {
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			if info.ModTime().Before(cutoffTime) {
+				continue // Skip old files
+			}
+		}
+		
+		files = append(files, filePath)
+	}
+	
+	return files, nil
+}
+
+// isProjectDir checks if a directory is a project directory (not used in new implementation)
+func isProjectDir(path string) bool {
+	// This function is kept for backward compatibility but not used in optimized version
+	// Check if path contains "projects" and is a direct child
+	if !strings.Contains(path, "/projects/") {
+		return false
+	}
+	
+	// Split by /projects/ and check structure
+	parts := strings.Split(path, "/projects/")
+	if len(parts) < 2 {
+		return false
+	}
+	
+	// Project directories are direct children of projects/
+	afterProjects := parts[1]
+	slashCount := strings.Count(afterProjects, "/")
+	return slashCount == 0
+}
+
+// sortFilesByModTime sorts files by modification time (newest first)
+func (l *Loader) sortFilesByModTime(files []string) ([]string, error) {
+	type fileWithModTime struct {
+		path    string
+		modTime time.Time
+	}
+	
+	filesWithTime := make([]fileWithModTime, len(files))
+	for i, file := range files {
+		info, err := os.Stat(file)
+		if err != nil {
+			// If we can't get file info, use zero time
+			filesWithTime[i] = fileWithModTime{path: file, modTime: time.Time{}}
+		} else {
+			filesWithTime[i] = fileWithModTime{path: file, modTime: info.ModTime()}
+		}
+	}
+	
+	// Sort by modification time (newest first)
+	sort.Slice(filesWithTime, func(i, j int) bool {
+		return filesWithTime[i].modTime.After(filesWithTime[j].modTime)
+	})
+	
+	// Extract sorted file paths
+	result := make([]string, len(filesWithTime))
+	for i, item := range filesWithTime {
+		result[i] = item.path
+	}
+	
+	return result, nil
 }
 
 type fileWithTimestamp struct {

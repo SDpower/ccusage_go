@@ -38,6 +38,7 @@ type BlocksLiveConfig struct {
 	NoColor          bool
 	Timezone         *time.Location
 	UseGradient      bool  // Enable gradient progress bars
+	OptimizeMemory   bool  // Enable memory optimization (only load recent data)
 }
 
 // BlocksLiveModel represents the state of the live monitor
@@ -83,7 +84,22 @@ func (m *BlocksLiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case blocksTickMsg:
 		// Reload data and find active block
 		ctx := context.Background()
-		entries, err := m.loader.LoadFromPath(ctx, m.config.DataPath)
+		
+		// Use optimized loading if enabled
+		var entries []types.UsageEntry
+		var err error
+		if m.config.OptimizeMemory {
+			// Only load recent data (last 12 hours) for live monitoring
+			options := &loader.LoaderOptions{
+				OnlyActiveSession: true,
+				ModifiedWithin:    12 * time.Hour,
+				MaxFiles:          100, // Limit to most recent 100 files
+			}
+			entries, err = m.loader.LoadFromPathWithOptions(ctx, m.config.DataPath, options)
+		} else {
+			entries, err = m.loader.LoadFromPath(ctx, m.config.DataPath)
+		}
+		
 		if err != nil {
 			m.err = err
 			return m, blocksTickCmd(m.config.RefreshInterval)
@@ -693,6 +709,11 @@ func StartBlocksLiveMonitoring(config BlocksLiveConfig) error {
 	pricingService := pricing.NewService()
 	calc := calculator.New(pricingService)
 	dataLoader := loader.New()
+	
+	// Enable debug mode if DEBUG env var is set
+	if os.Getenv("DEBUG") != "" {
+		dataLoader.SetDebug(true)
+	}
 
 	// Create initial model
 	model := &BlocksLiveModel{

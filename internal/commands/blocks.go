@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -84,6 +85,11 @@ func NewBlocksCommand() *cobra.Command {
 				calc := calculator.New(pricingService)
 				dataLoader := loader.New()
 				
+				// Enable debug mode if DEBUG env var is set
+				if os.Getenv("DEBUG") != "" {
+					dataLoader.SetDebug(true)
+				}
+				
 				// Load initial data to calculate max tokens
 				entries, err := dataLoader.LoadFromPath(cmd.Context(), dataPath)
 				if err != nil {
@@ -123,6 +129,7 @@ func NewBlocksCommand() *cobra.Command {
 					NoColor:         noColor,
 					Timezone:        loc,
 					UseGradient:     gradient,
+					OptimizeMemory:  true, // Always enable memory optimization for live mode
 				}
 				
 				return monitor.StartBlocksLiveMonitoring(config)
