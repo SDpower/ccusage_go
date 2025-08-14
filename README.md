@@ -32,7 +32,8 @@
 | **Memory Usage** | 414,944 KB (~405 MB) | 55,248 KB (~54 MB) | **87% reduction** |
 | **Memory Percentage** | 1.6% | 0.2% | **87.5% lower** |
 | **CPU Usage** | 120.6% | 9.8% | **92% reduction** |
-| **Executable Size** | Requires Node.js (~100MB) | Single binary (~25MB) | **75% smaller** |
+| **Download Size** | npm package + Node.js | **3.5-4 MB** compressed | **95% smaller** |
+| **Installed Size** | Node.js (~100MB) + deps | **~10 MB** single binary | **90% smaller** |
 
 *Test environment: macOS, Apple Silicon, monitoring 10+ projects*
 
@@ -46,9 +47,11 @@
 
 ### 📦 Distribution Advantages
 
-- **Single Binary**: No Node.js runtime required
-- **Cross-Platform**: Easy compilation for Windows, macOS, Linux
-- **Zero Dependencies**: Works out of the box
+- **Ultra-Compact**: Only **3.5-4 MB** download (compressed)
+- **Single Binary**: ~10 MB executable, no runtime required
+- **Zero Dependencies**: No Node.js, npm, or any other dependencies
+- **Instant Start**: Direct execution without installation process
+- **Cross-Platform**: Native binaries for all major platforms
 
 ## Installation
 
@@ -123,6 +126,19 @@ sudo mv ccusage-go-linux-amd64 /usr/local/bin/ccusage-go
 # Show only recent activity
 ./ccusage_go blocks --recent
 ```
+
+## Why Choose ccusage-go?
+
+### 💾 Storage Comparison
+
+| Platform | TypeScript Version | Go Version (v0.8.0) |
+|----------|-------------------|---------------------|
+| **Download** | npm install (~15 MB) + Node.js installer (~80 MB) | **3.5-4 MB** (.tar.gz/.zip) |
+| **Installation** | Node.js runtime + node_modules | **Single 10 MB binary** |
+| **Total Disk Usage** | ~150-200 MB | **~10 MB** |
+| **Update Process** | npm update (re-download deps) | Replace single file |
+
+*Go version is **95% smaller** to download and **95% less disk space** after installation!*
 
 ## Features
 
