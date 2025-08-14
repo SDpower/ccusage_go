@@ -48,7 +48,9 @@ func (f *Formatter) FormatSessionReport(sessions []types.SessionInfo) (string, e
 	case "csv":
 		return f.formatSessionCSV(sessions)
 	default:
-		return f.formatSessionTable(sessions)
+		// Use tablewriter formatter for better consistency
+		tableFormatter := NewTableWriterFormatter(f.options.NoColor)
+		return tableFormatter.FormatSessionReport(sessions), nil
 	}
 }
 
