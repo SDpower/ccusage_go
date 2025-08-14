@@ -7,6 +7,7 @@ import (
 type UsageEntry struct {
 	ID           string                 `json:"id"`
 	Timestamp    time.Time              `json:"timestamp"`
+	DateKey      string                 `json:"date_key,omitempty"` // YYYY-MM-DD format in specified timezone
 	ProjectPath  string                 `json:"project_path"`
 	Model        string                 `json:"model"`
 	InputTokens  int                    `json:"input_tokens"`

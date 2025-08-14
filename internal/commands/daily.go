@@ -19,6 +19,10 @@ func NewDailyCommand() *cobra.Command {
 		dataPath   string
 		noColor    bool
 		responsive bool
+		debug      bool
+		timezone   string
+		since      string
+		until      string
 	)
 
 	cmd := &cobra.Command{
@@ -44,10 +48,24 @@ func NewDailyCommand() *cobra.Command {
 				dataPath = getDefaultDataPath()
 			}
 
+			// Load timezone if specified (BEFORE loading data)
+			var loc *time.Location
+			if timezone != "" {
+				var err error
+				loc, err = time.LoadLocation(timezone)
+				if err != nil {
+					return fmt.Errorf("invalid timezone %s: %w", timezone, err)
+				}
+			} else {
+				loc = time.Local
+			}
+
 			// Initialize services
 			pricingService := pricing.NewService()
 			calc := calculator.New(pricingService)
 			dataLoader := loader.New()
+			dataLoader.SetDebug(debug)
+			dataLoader.SetTimezone(loc) // Apply timezone to data loading (BEFORE loading data)
 
 			formatter := output.NewFormatter(output.FormatterOptions{
 				Format:     format,
@@ -67,13 +85,23 @@ func NewDailyCommand() *cobra.Command {
 				return fmt.Errorf("failed to calculate costs: %w", err)
 			}
 
-			// For table format, use the enhanced table formatter
+			// For table format, use the tablewriter formatter
 			if format == "table" {
-				tableFormatter := output.NewTableFormatter(noColor)
+				tableFormatter := output.NewTableWriterFormatter(noColor)
+				tableFormatter.SetTimezone(loc)
 				
 				// If no specific date, show all dates grouped
 				if date == "" {
-					output := tableFormatter.FormatDailyReport(entries)
+					// Convert since/until from YYYYMMDD to YYYY-MM-DD format
+					sinceDate := ""
+					untilDate := ""
+					if since != "" && len(since) == 8 {
+						sinceDate = fmt.Sprintf("%s-%s-%s", since[:4], since[4:6], since[6:8])
+					}
+					if until != "" && len(until) == 8 {
+						untilDate = fmt.Sprintf("%s-%s-%s", until[:4], until[4:6], until[6:8])
+					}
+					output := tableFormatter.FormatDailyReportWithFilter(entries, sinceDate, untilDate)
 					fmt.Print(output)
 				} else {
 					// Filter entries for the target date
@@ -82,7 +110,8 @@ func NewDailyCommand() *cobra.Command {
 					endOfDay := startOfDay.Add(24 * time.Hour)
 					
 					for _, entry := range entries {
-						if entry.Timestamp.After(startOfDay) && entry.Timestamp.Before(endOfDay) {
+						// Include entries that are >= startOfDay and < endOfDay
+						if (entry.Timestamp.Equal(startOfDay) || entry.Timestamp.After(startOfDay)) && entry.Timestamp.Before(endOfDay) {
 							filteredEntries = append(filteredEntries, entry)
 						}
 					}
@@ -111,6 +140,10 @@ func NewDailyCommand() *cobra.Command {
 	cmd.Flags().StringVar(&dataPath, "data-path", "", "Path to Claude data directory")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 	cmd.Flags().BoolVar(&responsive, "responsive", true, "Enable responsive table layout")
+	cmd.Flags().BoolVar(&debug, "debug", false, "Show debug information")
+	cmd.Flags().StringVarP(&timezone, "timezone", "z", "", "Timezone for date grouping (e.g., UTC, America/New_York, Asia/Tokyo). Default: system timezone")
+	cmd.Flags().StringVarP(&since, "since", "s", "", "Filter from date (YYYYMMDD format)")
+	cmd.Flags().StringVarP(&until, "until", "u", "", "Filter until date (YYYYMMDD format)")
 
 	return cmd
 }
