@@ -37,6 +37,10 @@ func (f *TableWriterFormatter) FormatDailyReport(entries []types.UsageEntry) str
 	return f.FormatDailyReportWithFilter(entries, "", "")
 }
 
+func (f *TableWriterFormatter) FormatMonthlyReport(entries []types.UsageEntry) string {
+	return f.FormatMonthlyReportWithFilter(entries, "", "")
+}
+
 func (f *TableWriterFormatter) FormatDailyReportWithFilter(entries []types.UsageEntry, since, until string) string {
 	// Group entries by date
 	dailyGroups := f.groupByDate(entries)
@@ -281,6 +285,252 @@ func (f *TableWriterFormatter) groupByDate(entries []types.UsageEntry) map[strin
 	}
 	
 	return groups
+}
+
+func (f *TableWriterFormatter) FormatMonthlyReportWithFilter(entries []types.UsageEntry, since, until string) string {
+	// Group entries by month
+	monthlyGroups := f.groupByMonth(entries)
+	
+	if len(monthlyGroups) == 0 {
+		return f.formatEmptyMonthlyReport()
+	}
+
+	var output strings.Builder
+	
+	// Title - use default white color
+	output.WriteString(" ╭───────────────────────────────────────────╮\n")
+	output.WriteString(" │                                           │\n")
+	output.WriteString(" │  Claude Code Token Usage Report - Monthly │\n")
+	output.WriteString(" │                                           │\n")
+	output.WriteString(" ╰───────────────────────────────────────────╯\n\n")
+
+	// Create table buffer
+	var buf bytes.Buffer
+	
+	// Create table with tablewriter v1.0.9 API
+	table := tablewriter.NewTable(&buf,
+		tablewriter.WithRenderer(renderer.NewBlueprint(tw.Rendition{
+			Settings: tw.Settings{Separators: tw.Separators{BetweenRows: tw.On}},
+		})),
+		tablewriter.WithConfig(tablewriter.Config{
+			Row: tw.CellConfig{
+				Alignment: tw.CellAlignment{Global: tw.AlignRight},
+			},
+		}),
+	)
+	
+	// Set headers with multi-line support
+	table.Header([]string{
+		"Month\n",
+		"Models\n",
+		"Input\n",
+		"Output\n",
+		"Cache\nCreate",
+		"Cache Read\n",
+		"Total\nTokens",
+		"Cost\n(USD)",
+	})
+	
+	// Sort months
+	var months []string
+	for month := range monthlyGroups {
+		// Apply month filter if specified
+		if since != "" && month < since {
+			continue
+		}
+		if until != "" && month > until {
+			continue
+		}
+		months = append(months, month)
+	}
+	sort.Strings(months)
+	
+	var totalInput, totalOutput, totalCache, totalCacheRead, totalTokens int
+	var totalCost float64
+	
+	// Process each month
+	for _, month := range months {
+		monthEntries := monthlyGroups[month]
+		
+		// Aggregate data for this month
+		var monthInput, monthOutput, monthCache, monthCacheRead, monthTotalTokens int
+		var monthCost float64
+		modelMap := make(map[string]bool)
+		
+		for _, entry := range monthEntries {
+			monthInput += entry.InputTokens
+			monthOutput += entry.OutputTokens
+			monthCost += entry.Cost
+			monthTotalTokens += entry.TotalTokens
+			
+			// Track cache tokens from Raw data
+			if entry.Raw != nil {
+				if cc, ok := entry.Raw["cache_creation_input_tokens"].(int); ok {
+					monthCache += cc
+				}
+				if cr, ok := entry.Raw["cache_read_input_tokens"].(int); ok {
+					monthCacheRead += cr
+				}
+			}
+			
+			// Skip synthetic model in display (but still count its tokens/cost)
+			if entry.Model != "" && entry.Model != "<synthetic>" {
+				modelMap[entry.Model] = true
+			}
+		}
+		
+		// Format models list (same logic as daily format)
+		simplifiedModels := make(map[string]bool)
+		for model := range modelMap {
+			shortModel := f.shortenModelName(model)
+			simplifiedModels[shortModel] = true
+		}
+		
+		var models []string
+		for model := range simplifiedModels {
+			models = append(models, model)
+		}
+		sort.Strings(models)
+		modelsStr := "- " + strings.Join(models, "\n- ")
+		
+		// Add totals
+		totalInput += monthInput
+		totalOutput += monthOutput
+		totalCache += monthCache
+		totalCacheRead += monthCacheRead
+		totalTokens += monthTotalTokens
+		totalCost += monthCost
+		
+		// Format month as YYYY-MM (keep original format for monthly)
+		formattedMonth := month
+		
+		// Add row
+		table.Append([]string{
+			formattedMonth,
+			modelsStr,
+			f.formatLargeNumber(monthInput),
+			f.formatLargeNumber(monthOutput),
+			f.formatLargeNumber(monthCache),
+			f.formatLargeNumber(monthCacheRead),
+			f.formatLargeNumber(monthTotalTokens),
+			fmt.Sprintf("$%.2f", monthCost),
+		})
+	}
+	
+	// Set footer
+	table.Footer([]string{
+		"Total",
+		"",
+		f.formatLargeNumber(totalInput),
+		f.formatLargeNumber(totalOutput),
+		f.formatLargeNumber(totalCache),
+		f.formatLargeNumber(totalCacheRead),
+		f.formatLargeNumber(totalTokens),
+		fmt.Sprintf("$%.2f", totalCost),
+	})
+	
+	// Render table
+	table.Render()
+	tableOutput := buf.String()
+	
+	// Apply color styling if enabled (same as daily format)
+	if !f.noColor {
+		// Apply colors to table elements
+		gray := "\033[90m"     // Gray color for borders
+		cyan := "\033[36m"     // Cyan color for headers
+		yellow := "\033[33m"   // Yellow color for Total row
+		reset := "\033[0m"     // Reset color
+		
+		lines := strings.Split(tableOutput, "\n")
+		var coloredOutput strings.Builder
+		
+		for i, line := range lines {
+			if line == "" {
+				coloredOutput.WriteString("\n")
+				continue
+			}
+			
+			// Check if this is a pure border line (no data)
+			if strings.HasPrefix(line, "┌") || strings.HasPrefix(line, "├") || strings.HasPrefix(line, "└") {
+				// Pure border line - all gray
+				coloredOutput.WriteString(gray + line + reset)
+			} else if strings.Contains(line, "│") {
+				// Line with data and borders
+				parts := strings.Split(line, "│")
+				for j, part := range parts {
+					if j > 0 {
+						coloredOutput.WriteString(gray + "│" + reset)
+					}
+					
+					// Check content type
+					if i <= 2 && strings.TrimSpace(part) != "" {
+						// Header rows - use cyan
+						coloredOutput.WriteString(cyan + part + reset)
+					} else if strings.Contains(part, "Total") || (strings.Contains(line, "Total") && strings.TrimSpace(part) != "") {
+						// Total row - use yellow for all content
+						coloredOutput.WriteString(yellow + part + reset)
+					} else {
+						// Regular data - use default color (white)
+						coloredOutput.WriteString(part)
+					}
+				}
+			} else {
+				// Other lines
+				coloredOutput.WriteString(line)
+			}
+			
+			if i < len(lines)-1 {
+				coloredOutput.WriteString("\n")
+			}
+		}
+		
+		output.WriteString(coloredOutput.String())
+	} else {
+		output.WriteString(tableOutput)
+	}
+	
+	return output.String()
+}
+
+func (f *TableWriterFormatter) groupByMonth(entries []types.UsageEntry) map[string][]types.UsageEntry {
+	groups := make(map[string][]types.UsageEntry)
+	
+	for _, entry := range entries {
+		// Skip invalid timestamps
+		if entry.Timestamp.IsZero() || entry.Timestamp.Year() < 2020 {
+			continue
+		}
+		
+		// Use pre-computed DateKey from loader (already converted to correct timezone)
+		// Extract month (YYYY-MM) from DateKey (YYYY-MM-DD)
+		monthKey := ""
+		if entry.DateKey != "" && len(entry.DateKey) >= 7 {
+			monthKey = entry.DateKey[:7] // Take first 7 characters: YYYY-MM
+		} else {
+			// Fallback to timezone conversion if DateKey not set
+			timeInZone := entry.Timestamp.In(f.timezone)
+			monthKey = timeInZone.Format("2006-01")
+		}
+		
+		groups[monthKey] = append(groups[monthKey], entry)
+	}
+	
+	return groups
+}
+
+func (f *TableWriterFormatter) formatEmptyMonthlyReport() string {
+	var output strings.Builder
+	
+	// Title - use default white color
+	output.WriteString(" ╭───────────────────────────────────────────╮\n")
+	output.WriteString(" │                                           │\n")
+	output.WriteString(" │  Claude Code Token Usage Report - Monthly │\n")
+	output.WriteString(" │                                           │\n")
+	output.WriteString(" ╰───────────────────────────────────────────╯\n\n")
+	
+	output.WriteString("No usage data found for the specified criteria.\n")
+	
+	return output.String()
 }
 
 func (f *TableWriterFormatter) formatEmptyReport() string {
