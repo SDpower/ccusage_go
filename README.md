@@ -1,4 +1,4 @@
-# ccusage-go
+# ccusage_go
 
 <p align="center">
   <strong>🚀 A high-performance Go implementation of Claude Code usage analyzer</strong>
@@ -19,7 +19,7 @@
 
 ## About
 
-`ccusage-go` is a Go implementation of the popular [ccusage](https://github.com/ryoppippi/ccusage) tool by [@ryoppippi](https://github.com/ryoppippi). This version maintains compatibility with the original TypeScript version while offering significant performance improvements and reduced memory footprint.
+`ccusage_go` is a Go implementation of the popular [ccusage](https://github.com/ryoppippi/ccusage) tool by [@ryoppippi](https://github.com/ryoppippi). This version maintains compatibility with the original TypeScript version while offering significant performance improvements and reduced memory footprint.
 
 ## Why Go Version?
 
@@ -27,15 +27,29 @@
 
 #### blocks --live Real-time Monitoring Performance
 
-| Metric | TypeScript Version | Go Version | Improvement |
-|--------|-------------------|------------|-------------|
-| **Memory Usage** | 414,944 KB (~405 MB) | 55,248 KB (~54 MB) | **87% reduction** |
-| **Memory Percentage** | 1.6% | 0.2% | **87.5% lower** |
-| **CPU Usage** | 120.6% | 9.8% | **92% reduction** |
-| **Download Size** | npm package + Node.js | **3.5-4 MB** compressed | **95% smaller** |
-| **Installed Size** | Node.js (~100MB) + deps | **~10 MB** single binary | **90% smaller** |
+| Metric | ccusage (TypeScript) | ccusage_go | Improvement |
+|--------|---------------------|------------|-------------|
+| **Peak Memory Usage** | ~446 MB | ~46 MB | **90% reduction** |
+| **Peak CPU Usage** | 40.0% | 142% (startup only) | See note† |
+| **Steady-state Memory** | ~263 MB | ~45 MB | **83% reduction** |
+| **Process Count** | 3 (script+npm+node) | 2 (script+binary) | Simpler |
+| **Startup Memory** | ~240 MB (Node.js) | ~10 MB | **96% reduction** |
+| **Download Size** | ~1 MB* | **3.5-4 MB** compressed | See note below |
+| **Runtime Required** | Node.js (~100MB) | None (single binary) | **No runtime needed** |
 
-*Test environment: macOS, Apple Silicon, monitoring 10+ projects*
+*Test environment: macOS, Apple Silicon, monitoring 10+ projects, 15-second measurements after 5s warmup*
+†CPU: Go version has higher peak during initial file loading but drops to <10% during monitoring
+
+**Note on Download Size**: While the ccusage npm package is only ~1 MB, it requires Node.js runtime (~100 MB) to be pre-installed. The ccusage_go binary is completely self-contained at 3.5-4 MB compressed, requiring no runtime or dependencies.
+
+**Performance Testing**: The above measurements were obtained using our monitoring script (`docs/monitor_ccusage.sh`) which tracks all child processes including Node.js runtime. You can reproduce these tests with:
+```bash
+# Monitor ccusage (TypeScript version)
+./docs/monitor_ccusage.sh
+
+# Monitor ccusage_go
+./docs/monitor_ccusage.sh ccusage_go
+```
 
 #### Other Performance Metrics
 
@@ -77,16 +91,16 @@ Download from [GitHub Releases](https://github.com/SDpower/ccusage_go/releases)
 
 ```bash
 # macOS Apple Silicon
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.8.0/ccusage-go-darwin-arm64.tar.gz | tar xz
-sudo mv ccusage-go-darwin-arm64 /usr/local/bin/ccusage-go
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.9.0/ccusage_go-darwin-arm64.tar.gz | tar xz
+sudo mv ccusage_go-darwin-arm64 /usr/local/bin/ccusage_go
 
 # macOS Intel
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.8.0/ccusage-go-darwin-amd64.tar.gz | tar xz
-sudo mv ccusage-go-darwin-amd64 /usr/local/bin/ccusage-go
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.9.0/ccusage_go-darwin-amd64.tar.gz | tar xz
+sudo mv ccusage_go-darwin-amd64 /usr/local/bin/ccusage_go
 
 # Linux x64
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.8.0/ccusage-go-linux-amd64.tar.gz | tar xz
-sudo mv ccusage-go-linux-amd64 /usr/local/bin/ccusage-go
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.9.0/ccusage_go-linux-amd64.tar.gz | tar xz
+sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 ```
 
 ## Usage
@@ -127,18 +141,29 @@ sudo mv ccusage-go-linux-amd64 /usr/local/bin/ccusage-go
 ./ccusage_go blocks --recent
 ```
 
-## Why Choose ccusage-go?
+## Why Choose ccusage_go?
 
-### 💾 Storage Comparison
+### 💾 Storage & Runtime Comparison
 
-| Platform | TypeScript Version | Go Version (v0.8.0) |
-|----------|-------------------|---------------------|
-| **Download** | npm install (~15 MB) + Node.js installer (~80 MB) | **3.5-4 MB** (.tar.gz/.zip) |
-| **Installation** | Node.js runtime + node_modules | **Single 10 MB binary** |
-| **Total Disk Usage** | ~150-200 MB | **~10 MB** |
-| **Update Process** | npm update (re-download deps) | Replace single file |
+| Aspect | ccusage (TypeScript) | ccusage_go |
+|--------|---------------------|------------|
+| **Package Download** | ~1 MB (npm package) | **3.5-4 MB** (compressed binary) |
+| **Runtime Requirement** | Node.js (~100 MB) | **None** |
+| **Total Storage Need** | ~101 MB (Node.js + package) | **~10 MB** (single binary) |
+| **Dependencies** | npm packages + Node.js runtime | **Zero dependencies** |
+| **Update Process** | npm update (network required) | Replace single file |
 
-*Go version is **95% smaller** to download and **95% less disk space** after installation!*
+### 🚀 Real-World Performance Impact
+
+| Scenario | ccusage (TypeScript) | ccusage_go |
+|----------|---------------------|------------|
+| **Fresh Install** | Install Node.js + npm install | Download & run |
+| **Memory at Startup** | ~240 MB (Node.js init) | ~10 MB |
+| **Memory at Peak** | ~419 MB | ~54 MB |
+| **CPU Usage (live mode)** | 120.3% (multi-core) | 9.8% |
+| **System Impact** | Noticeable | Minimal |
+
+*While ccusage's npm package is smaller (1 MB), it requires Node.js runtime. The ccusage_go provides a complete solution in a single 3.5-4 MB download with **87% less memory usage** and **92% less CPU usage** during operation.*
 
 ## Features
 

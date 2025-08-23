@@ -1,4 +1,4 @@
-# ccusage-go
+# ccusage_go
 
 <p align="center">
   <strong>🚀 高效能的 Claude Code 使用量分析工具 Go 實作版</strong>
@@ -19,7 +19,7 @@
 
 ## 關於專案
 
-`ccusage-go` 是 [@ryoppippi](https://github.com/ryoppippi) 開發的熱門工具 [ccusage](https://github.com/ryoppippi/ccusage) 的 Go 語言實作版本。此版本保持與原始 TypeScript 版本的相容性，同時提供顯著的效能改進和更低的記憶體使用量。
+`ccusage_go` 是 [@ryoppippi](https://github.com/ryoppippi) 開發的熱門工具 [ccusage](https://github.com/ryoppippi/ccusage) 的 Go 語言實作版本。此版本保持與原始 TypeScript 版本的相容性，同時提供顯著的效能改進和更低的記憶體使用量。
 
 ## 為什麼選擇 Go 版本？
 
@@ -27,15 +27,29 @@
 
 #### blocks --live 即時監控模式效能比較
 
-| 指標 | TypeScript 版本 | Go 版本 | 改善幅度 |
-|------|----------------|---------|----------|
-| **記憶體使用量** | 414,944 KB (~405 MB) | 55,248 KB (~54 MB) | **減少 87%** |
-| **記憶體百分比** | 1.6% | 0.2% | **降低 87.5%** |
-| **CPU 使用率** | 120.6% | 9.8% | **降低 92%** |
-| **下載大小** | npm 套件 + Node.js | **3.5-4 MB** 壓縮檔 | **小 95%** |
-| **安裝後大小** | Node.js (~100MB) + 相依套件 | **~10 MB** 單一執行檔 | **小 90%** |
+| 指標 | ccusage (TypeScript) | ccusage_go | 改善幅度 |
+|------|---------------------|------------|----------|
+| **尖峰記憶體使用量** | ~446 MB | ~46 MB | **減少 90%** |
+| **尖峰 CPU 使用率** | 40.0% | 142% (僅啟動時) | 見註解† |
+| **穩定狀態記憶體** | ~263 MB | ~45 MB | **減少 83%** |
+| **程序數量** | 3 個 (script+npm+node) | 2 個 (script+執行檔) | 更簡單 |
+| **啟動記憶體** | ~240 MB (Node.js) | ~10 MB | **減少 96%** |
+| **下載大小** | ~1 MB* | **3.5-4 MB** 壓縮檔 | 見下方說明 |
+| **需要執行環境** | Node.js (~100MB) | 無（單一執行檔） | **無需執行環境** |
 
-*實測環境：macOS, Apple Silicon, 監控 10+ 個專案*
+*實測環境：macOS, Apple Silicon, 監控 10+ 個專案，5 秒暖機後測量 15 秒*
+†CPU：Go 版本在初始載入檔案時有較高尖峰，但監控期間降至 <10%
+
+**關於下載大小的說明**：雖然 ccusage npm 套件只有 ~1 MB，但需要預先安裝 Node.js 執行環境（~100 MB）。ccusage_go 執行檔壓縮後為 3.5-4 MB，完全獨立運作，不需要任何執行環境或相依套件。
+
+**效能測試方法**：以上測量數據使用我們的監控腳本（`docs/monitor_ccusage.sh`）取得，該腳本會追蹤包括 Node.js 執行環境在內的所有子程序。您可以使用以下指令重現這些測試：
+```bash
+# 監控 ccusage (TypeScript 版本)
+./docs/monitor_ccusage.sh
+
+# 監控 ccusage_go
+./docs/monitor_ccusage.sh ccusage_go
+```
 
 #### 其他效能指標
 
@@ -77,16 +91,16 @@ make install
 
 ```bash
 # macOS Apple Silicon
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.8.0/ccusage-go-darwin-arm64.tar.gz | tar xz
-sudo mv ccusage-go-darwin-arm64 /usr/local/bin/ccusage-go
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.9.0/ccusage_go-darwin-arm64.tar.gz | tar xz
+sudo mv ccusage_go-darwin-arm64 /usr/local/bin/ccusage_go
 
 # macOS Intel
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.8.0/ccusage-go-darwin-amd64.tar.gz | tar xz
-sudo mv ccusage-go-darwin-amd64 /usr/local/bin/ccusage-go
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.9.0/ccusage_go-darwin-amd64.tar.gz | tar xz
+sudo mv ccusage_go-darwin-amd64 /usr/local/bin/ccusage_go
 
 # Linux x64
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.8.0/ccusage-go-linux-amd64.tar.gz | tar xz
-sudo mv ccusage-go-linux-amd64 /usr/local/bin/ccusage-go
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.9.0/ccusage_go-linux-amd64.tar.gz | tar xz
+sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 ```
 
 ## 使用方法
@@ -127,18 +141,29 @@ sudo mv ccusage-go-linux-amd64 /usr/local/bin/ccusage-go
 ./ccusage_go blocks --recent
 ```
 
-## 為什麼選擇 ccusage-go？
+## 為什麼選擇 ccusage_go？
 
-### 💾 儲存空間比較
+### 💾 儲存空間與執行環境比較
 
-| 平台 | TypeScript 版本 | Go 版本 (v0.8.0) |
-|------|----------------|------------------|
-| **下載大小** | npm install (~15 MB) + Node.js 安裝檔 (~80 MB) | **3.5-4 MB** (.tar.gz/.zip) |
-| **安裝後** | Node.js 執行環境 + node_modules | **單一 10 MB 執行檔** |
-| **總磁碟使用** | ~150-200 MB | **~10 MB** |
-| **更新方式** | npm update (重新下載相依套件) | 替換單一檔案 |
+| 面向 | ccusage (TypeScript) | ccusage_go |
+|------|---------------------|------------|
+| **套件下載** | ~1 MB (npm 套件) | **3.5-4 MB** (壓縮的執行檔) |
+| **執行環境需求** | Node.js (~100 MB) | **無** |
+| **總儲存需求** | ~101 MB (Node.js + 套件) | **~10 MB** (單一執行檔) |
+| **相依性** | npm 套件 + Node.js 執行環境 | **零相依性** |
+| **更新方式** | npm update (需要網路) | 替換單一檔案 |
 
-*Go 版本下載小 **95%**，安裝後占用空間少 **95%**！*
+### 🚀 實際運作效能影響
+
+| 場景 | ccusage (TypeScript) | ccusage_go |
+|------|---------------------|------------|
+| **全新安裝** | 安裝 Node.js + npm install | 下載即可執行 |
+| **啟動時記憶體** | ~240 MB (Node.js 初始化) | ~10 MB |
+| **尖峰記憶體** | ~419 MB | ~54 MB |
+| **CPU 使用率 (live 模式)** | 120.3% (多核心) | 9.8% |
+| **系統影響** | 明顯 | 極小 |
+
+*雖然 ccusage 的 npm 套件較小（1 MB），但需要 Node.js 執行環境。ccusage_go 在單一 3.5-4 MB 下載中提供完整解決方案，運作時**記憶體使用量減少 87%**，**CPU 使用量減少 92%**。*
 
 ## 功能特色
 

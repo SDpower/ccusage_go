@@ -9,13 +9,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var version = "v0.9.0"
+
 func main() {
 	ctx := context.Background()
 
 	rootCmd := &cobra.Command{
-		Use:   "ccusage",
-		Short: "Claude Code usage analysis tool",
-		Long:  `A CLI tool for analyzing Claude Code usage data from local JSONL files.`,
+		Use:     "ccusage",
+		Short:   "Claude Code usage analysis tool",
+		Long:    `A CLI tool for analyzing Claude Code usage data from local JSONL files.`,
+		Version: version,
 	}
 
 	rootCmd.AddCommand(
