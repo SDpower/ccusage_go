@@ -25,30 +25,43 @@ func New(pricingService PricingService) *Calculator {
 func (c *Calculator) CalculateCosts(ctx context.Context, entries []types.UsageEntry) ([]types.UsageEntry, error) {
 	for i := range entries {
 		if entries[i].Cost == 0 {
-			inputPrice, outputPrice, cacheCreatePrice, cacheReadPrice, err := c.pricingService.GetModelPrice(ctx, entries[i].Model)
-			if err != nil {
-				// Continue without cost if pricing fails
-				continue
-			}
-
-			// Calculate cost using per-token pricing (not per-1000 tokens)
-			cost := float64(entries[i].InputTokens)*inputPrice +
-				float64(entries[i].OutputTokens)*outputPrice
-			
-			// Add cache token costs if present
-			if entries[i].Raw != nil {
-				if cacheCreate, ok := entries[i].Raw["cache_creation_input_tokens"].(int); ok {
-					cost += float64(cacheCreate) * cacheCreatePrice
-				}
-				if cacheRead, ok := entries[i].Raw["cache_read_input_tokens"].(int); ok {
-					cost += float64(cacheRead) * cacheReadPrice
-				}
-			}
-			
-			entries[i].Cost = cost
+			c.calculateSingleCost(ctx, &entries[i])
 		}
 	}
 	return entries, nil
+}
+
+// CalculateCost implements the loader.CostCalculator interface for stream processing
+func (c *Calculator) CalculateCost(entry *types.UsageEntry) error {
+	if entry.Cost == 0 {
+		c.calculateSingleCost(context.Background(), entry)
+	}
+	return nil
+}
+
+// calculateSingleCost calculates cost for a single entry
+func (c *Calculator) calculateSingleCost(ctx context.Context, entry *types.UsageEntry) {
+	inputPrice, outputPrice, cacheCreatePrice, cacheReadPrice, err := c.pricingService.GetModelPrice(ctx, entry.Model)
+	if err != nil {
+		// Continue without cost if pricing fails
+		return
+	}
+
+	// Calculate cost using per-token pricing (not per-1000 tokens)
+	cost := float64(entry.InputTokens)*inputPrice +
+		float64(entry.OutputTokens)*outputPrice
+	
+	// Add cache token costs if present
+	if entry.Raw != nil {
+		if cacheCreate, ok := entry.Raw["cache_creation_input_tokens"].(int); ok {
+			cost += float64(cacheCreate) * cacheCreatePrice
+		}
+		if cacheRead, ok := entry.Raw["cache_read_input_tokens"].(int); ok {
+			cost += float64(cacheRead) * cacheReadPrice
+		}
+	}
+	
+	entry.Cost = cost
 }
 
 func (c *Calculator) GenerateDailyReport(entries []types.UsageEntry, date time.Time) types.UsageReport {

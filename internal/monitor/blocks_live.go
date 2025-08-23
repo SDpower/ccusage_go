@@ -89,11 +89,15 @@ func (m *BlocksLiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var entries []types.UsageEntry
 		var err error
 		if m.config.OptimizeMemory {
-			// Only load recent data (last 12 hours) for live monitoring
+			// Only load recent data (last 24 hours) for live monitoring
+			// Matches TypeScript version's RETENTION_HOURS = 24
+			// Enable stream processing to calculate costs during loading
 			options := &loader.LoaderOptions{
 				OnlyActiveSession: true,
-				ModifiedWithin:    12 * time.Hour,
+				ModifiedWithin:    24 * time.Hour,
 				MaxFiles:          100, // Limit to most recent 100 files
+				StreamProcessing:  true, // Calculate costs immediately after reading each file
+				Calculator:        m.calculator, // Pass calculator for stream processing
 			}
 			entries, err = m.loader.LoadFromPathWithOptions(ctx, m.config.DataPath, options)
 		} else {
@@ -105,11 +109,13 @@ func (m *BlocksLiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, blocksTickCmd(m.config.RefreshInterval)
 		}
 
-		// Calculate costs
-		entries, err = m.calculator.CalculateCosts(ctx, entries)
-		if err != nil {
-			m.err = err
-			return m, blocksTickCmd(m.config.RefreshInterval)
+		// Calculate costs only if stream processing was not used
+		if !m.config.OptimizeMemory {
+			entries, err = m.calculator.CalculateCosts(ctx, entries)
+			if err != nil {
+				m.err = err
+				return m, blocksTickCmd(m.config.RefreshInterval)
+			}
 		}
 
 		// Identify session blocks
@@ -709,6 +715,9 @@ func StartBlocksLiveMonitoring(config BlocksLiveConfig) error {
 	pricingService := pricing.NewService()
 	calc := calculator.New(pricingService)
 	dataLoader := loader.New()
+	
+	// Optimize for live mode: reduce concurrent file reads to minimize CPU usage
+	dataLoader.SetMaxWorkers(3) // Even more conservative for live monitoring
 	
 	// Enable debug mode if DEBUG env var is set
 	if os.Getenv("DEBUG") != "" {

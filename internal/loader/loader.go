@@ -15,11 +15,18 @@ import (
 	"github.com/sdpower/ccusage-go/internal/types"
 )
 
+// CostCalculator interface for optional cost calculation during loading
+type CostCalculator interface {
+	CalculateCost(entry *types.UsageEntry) error
+}
+
 // LoaderOptions configures optional loading behaviors
 type LoaderOptions struct {
 	OnlyActiveSession bool          // Only load active session data
 	ModifiedWithin    time.Duration // Only load files modified within this duration
 	MaxFiles          int           // Maximum number of files to load (0 = unlimited)
+	StreamProcessing  bool          // Enable stream processing - calculate costs immediately after reading each file
+	Calculator        CostCalculator // Optional calculator for stream processing
 }
 
 type Loader struct {
@@ -30,7 +37,7 @@ type Loader struct {
 
 func New() *Loader {
 	return &Loader{
-		maxWorkers: 10,
+		maxWorkers: 1, // Single worker to minimize CPU and memory usage
 		debug:      false,
 		timezone:   time.Local,
 	}
@@ -42,6 +49,14 @@ func (l *Loader) SetDebug(debug bool) {
 
 func (l *Loader) SetTimezone(timezone *time.Location) {
 	l.timezone = timezone
+}
+
+// SetMaxWorkers sets the maximum number of concurrent file read workers
+// This is useful for reducing CPU usage in live monitoring mode
+func (l *Loader) SetMaxWorkers(workers int) {
+	if workers > 0 {
+		l.maxWorkers = workers
+	}
 }
 
 func (l *Loader) LoadFromPath(ctx context.Context, path string) ([]types.UsageEntry, error) {
@@ -118,10 +133,19 @@ func (l *Loader) LoadFromPathWithOptions(ctx context.Context, path string, optio
 		}
 	}
 
-	entries, err := l.LoadParallel(ctx, paths)
+	// Use LoadParallelWithOptions if stream processing is enabled
+	var entries []types.UsageEntry
+	if options != nil && options.StreamProcessing {
+		entries, err = l.LoadParallelWithOptions(ctx, paths, options)
+	} else {
+		entries, err = l.LoadParallel(ctx, paths)
+	}
 	
 	if l.debug {
 		fmt.Fprintf(os.Stderr, "Debug: Loaded %d usage entries\n", len(entries))
+		if options != nil && options.StreamProcessing {
+			fmt.Fprintf(os.Stderr, "Debug: Stream processing enabled - costs calculated during loading\n")
+		}
 		
 		// Count valid entries (any entry with timestamp is valid)
 		validCount := 0
@@ -137,6 +161,10 @@ func (l *Loader) LoadFromPathWithOptions(ctx context.Context, path string, optio
 }
 
 func (l *Loader) LoadParallel(ctx context.Context, paths []string) ([]types.UsageEntry, error) {
+	return l.LoadParallelWithOptions(ctx, paths, nil)
+}
+
+func (l *Loader) LoadParallelWithOptions(ctx context.Context, paths []string, options *LoaderOptions) ([]types.UsageEntry, error) {
 	type result struct {
 		entries []types.UsageEntry
 		err     error
@@ -166,6 +194,33 @@ func (l *Loader) LoadParallel(ctx context.Context, paths []string) ([]types.Usag
 					return
 				default:
 					entries, err := l.loadFileWithGlobalDedupe(path, &dedupeMutex, globalDedupeMap)
+					
+					// Stream processing: calculate costs immediately if enabled
+					if options != nil && options.StreamProcessing && options.Calculator != nil && err == nil {
+						for i := range entries {
+							options.Calculator.CalculateCost(&entries[i])
+							// Clear most Raw data after cost calculation to save memory
+							// Keep only cache token fields that are needed for aggregation
+							if entries[i].Raw != nil {
+								cacheData := make(map[string]interface{})
+								if cc, exists := entries[i].Raw["cache_creation_input_tokens"]; exists {
+									cacheData["cache_creation_input_tokens"] = cc
+								}
+								if cr, exists := entries[i].Raw["cache_read_input_tokens"]; exists {
+									cacheData["cache_read_input_tokens"] = cr
+								}
+								if resetTime, exists := entries[i].Raw["usage_limit_reset_time"]; exists {
+									cacheData["usage_limit_reset_time"] = resetTime
+								}
+								if len(cacheData) > 0 {
+									entries[i].Raw = cacheData
+								} else {
+									entries[i].Raw = nil
+								}
+							}
+						}
+					}
+					
 					results <- result{entries: entries, err: err}
 				}
 			}
@@ -215,6 +270,13 @@ func (l *Loader) loadFile(path string) ([]types.UsageEntry, error) {
 
 func (l *Loader) loadFileWithGlobalDedupe(path string, dedupeMutex *sync.Mutex, globalDedupeMap map[string]bool) ([]types.UsageEntry, error) {
 	return l.loadFileWithDedupe(path, globalDedupeMap, dedupeMutex)
+}
+
+// clearRawData removes Raw data from entries to save memory
+func clearRawData(entries []types.UsageEntry) {
+	for i := range entries {
+		entries[i].Raw = nil
+	}
 }
 
 func (l *Loader) loadFileWithDedupe(path string, dedupeMap map[string]bool, dedupeMutex ...*sync.Mutex) ([]types.UsageEntry, error) {
@@ -300,6 +362,23 @@ func (l *Loader) loadFileWithDedupe(path string, dedupeMap map[string]bool, dedu
 			}
 		}
 
+		// For stream processing, we can clear most of Raw data after parsing
+		// Keep only cache token fields if they exist
+		if entry.Raw != nil {
+			cacheData := make(map[string]interface{})
+			if cc, ok := entry.Raw["cache_creation_input_tokens"]; ok {
+				cacheData["cache_creation_input_tokens"] = cc
+			}
+			if cr, ok := entry.Raw["cache_read_input_tokens"]; ok {
+				cacheData["cache_read_input_tokens"] = cr
+			}
+			if len(cacheData) > 0 {
+				entry.Raw = cacheData
+			} else {
+				entry.Raw = nil
+			}
+		}
+		
 		entries = append(entries, entry)
 	}
 

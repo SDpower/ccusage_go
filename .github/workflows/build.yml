@@ -37,10 +37,10 @@ jobs:
         run: go vet ./...
       
       - name: Build binary
-        run: go build -o ccusage-go cmd/ccusage/main.go
+        run: make build
       
       - name: Test binary execution
-        run: ./ccusage-go --help
+        run: ./bin/ccusage_go --help
 
   lint:
     runs-on: ubuntu-latest

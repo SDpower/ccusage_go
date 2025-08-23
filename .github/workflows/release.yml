@@ -17,36 +17,36 @@ jobs:
           # Linux architectures
           - goos: linux
             goarch: amd64
-            output: ccusage-go-linux-amd64
+            output: ccusage_go-linux-amd64
           - goos: linux
             goarch: arm64
-            output: ccusage-go-linux-arm64
+            output: ccusage_go-linux-arm64
           - goos: linux
             goarch: 386
-            output: ccusage-go-linux-386
+            output: ccusage_go-linux-386
           - goos: linux
             goarch: arm
             goarm: 7
-            output: ccusage-go-linux-armv7
+            output: ccusage_go-linux-armv7
           
           # macOS (Darwin) architectures
           - goos: darwin
             goarch: amd64
-            output: ccusage-go-darwin-amd64
+            output: ccusage_go-darwin-amd64
           - goos: darwin
             goarch: arm64
-            output: ccusage-go-darwin-arm64
+            output: ccusage_go-darwin-arm64
           
           # Windows architectures
           - goos: windows
             goarch: amd64
-            output: ccusage-go-windows-amd64.exe
+            output: ccusage_go-windows-amd64.exe
           - goos: windows
             goarch: 386
-            output: ccusage-go-windows-386.exe
+            output: ccusage_go-windows-386.exe
           - goos: windows
             goarch: arm64
-            output: ccusage-go-windows-arm64.exe
+            output: ccusage_go-windows-arm64.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -111,30 +111,30 @@ jobs:
           draft: false
           prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
           body: |
-            ## ccusage-go ${{ github.ref_name }}
+            ## ccusage_go ${{ github.ref_name }}
             
             ### 🚀 Performance
-            - Memory usage: ~54MB (87% less than TypeScript version)
-            - CPU usage: ~10% (92% less than TypeScript version)
+            - Memory usage: ~45MB (88% less than TypeScript version)
+            - CPU usage: Peak during startup, low during monitoring
             
             ### 📦 Installation
             
             #### macOS
             ```bash
             # Intel Mac
-            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ccusage-go-darwin-amd64.tar.gz | tar xz
+            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ccusage_go-darwin-amd64.tar.gz | tar xz
             
             # Apple Silicon (M1/M2/M3)
-            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ccusage-go-darwin-arm64.tar.gz | tar xz
+            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ccusage_go-darwin-arm64.tar.gz | tar xz
             ```
             
             #### Linux
             ```bash
             # x64
-            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ccusage-go-linux-amd64.tar.gz | tar xz
+            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ccusage_go-linux-amd64.tar.gz | tar xz
             
             # ARM64
-            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ccusage-go-linux-arm64.tar.gz | tar xz
+            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ccusage_go-linux-arm64.tar.gz | tar xz
             ```
             
             #### Windows
