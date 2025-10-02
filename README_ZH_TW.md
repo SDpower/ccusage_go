@@ -186,6 +186,7 @@ sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 - **增強的 TUI**：使用 Bubble Tea 框架建置
 - **效能快取**：透過顏色快取優化渲染
 - **"WITH GO" 標記**：所有報告都清楚標示為 Go 版本
+- **統一 Model 標籤**：支援最新的 Claude 模型格式（Opus-4, Sonnet-4, Opus-4.1, Sonnet-4.5）
 
 ## 功能比較
 

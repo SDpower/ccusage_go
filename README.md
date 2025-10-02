@@ -186,6 +186,7 @@ sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 - **Enhanced TUI**: Built with Bubble Tea framework
 - **Performance Caching**: Optimized rendering with color caching
 - **"WITH GO" Branding**: All reports clearly marked as Go version
+- **Unified Model Labels**: Support for latest Claude model formats (Opus-4, Sonnet-4, Opus-4.1, Sonnet-4.5)
 
 ## Feature Comparison
 

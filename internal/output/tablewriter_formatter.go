@@ -165,7 +165,7 @@ func (f *TableWriterFormatter) FormatDailyReportWithFilter(entries []types.Usage
 		// Format models list
 		var modelList []string
 		for model := range models {
-			shortModel := f.shortenModelName(model)
+			shortModel := ShortenModelName(model)
 			modelList = append(modelList, shortModel)
 		}
 		sort.Strings(modelList)
@@ -398,7 +398,7 @@ func (f *TableWriterFormatter) FormatMonthlyReportWithFilter(entries []types.Usa
 		// Format models list (same logic as daily format)
 		simplifiedModels := make(map[string]bool)
 		for model := range modelMap {
-			shortModel := f.shortenModelName(model)
+			shortModel := ShortenModelName(model)
 			simplifiedModels[shortModel] = true
 		}
 		
@@ -569,20 +569,31 @@ func (f *TableWriterFormatter) formatEmptyReport() string {
 	return output.String()
 }
 
-func (f *TableWriterFormatter) shortenModelName(model string) string {
-	// Use regex to extract model type and version, similar to TypeScript version
-	// The TypeScript regex is: /claude-(\w+)-(\d+)-\d+/
-	// This matches the first two parts after "claude-" and ignores the rest
+// ShortenModelName 簡化 model 名稱為顯示格式（公用函數）
+func ShortenModelName(model string) string {
+	// 處理新的 model ID 格式，支援 4.1 和 4.5 版本
 	// Examples:
-	// claude-sonnet-4-20250514 -> sonnet-4
-	// claude-opus-4-1-20250805 -> opus-4 (matches claude-opus-4, ignores -1-20250805)
-	// claude-haiku-3-20240307 -> haiku-3
-	
-	// Use the same pattern as TypeScript: claude-{type}-{version}-{anything}
-	re := regexp.MustCompile(`^claude-(\w+)-(\d+)-`)
+	// claude-opus-4-1-20250805 -> Opus-4.1
+	// claude-sonnet-4-5-20250929 -> Sonnet-4.5
+	// claude-opus-4-20250514 -> Opus-4
+	// claude-sonnet-4-20250514 -> Sonnet-4
+	// claude-haiku-3-20240307 -> Haiku-3
+
+	// 首先嘗試匹配帶小版本號的格式: claude-{type}-{major}-{minor}-{date}
+	re := regexp.MustCompile(`^claude-(\w+)-(\d+)-(\d+)-\d+`)
 	if matches := re.FindStringSubmatch(model); matches != nil {
-		// Return type-version format
-		return fmt.Sprintf("%s-%s", matches[1], matches[2])
+		modelType := strings.Title(strings.ToLower(matches[1]))  // 首字母大寫
+		majorVersion := matches[2]
+		minorVersion := matches[3]
+		return fmt.Sprintf("%s-%s.%s", modelType, majorVersion, minorVersion)
+	}
+
+	// 然後嘗試匹配標準格式: claude-{type}-{version}-{date}
+	re = regexp.MustCompile(`^claude-(\w+)-(\d+)-\d+`)
+	if matches := re.FindStringSubmatch(model); matches != nil {
+		modelType := strings.Title(strings.ToLower(matches[1]))  // 首字母大寫
+		version := matches[2]
+		return fmt.Sprintf("%s-%s", modelType, version)
 	}
 	
 	// Special handling for known non-Claude models
@@ -693,7 +704,7 @@ func (f *TableWriterFormatter) FormatSessionReportWithFilter(sessions []types.Se
 		// Format models list (same logic as daily format)
 		simplifiedModels := make(map[string]bool)
 		for _, model := range session.ModelsUsed {
-			shortModel := f.shortenModelName(model)
+			shortModel := ShortenModelName(model)
 			simplifiedModels[shortModel] = true
 		}
 		
@@ -1345,7 +1356,7 @@ func (f *TableWriterFormatter) formatBlockModels(models []string) string {
 	// Simplify model names
 	simplifiedModels := make(map[string]bool)
 	for _, model := range models {
-		shortModel := f.shortenModelName(model)
+		shortModel := ShortenModelName(model)
 		simplifiedModels[shortModel] = true
 	}
 	

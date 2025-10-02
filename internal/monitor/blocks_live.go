@@ -19,6 +19,7 @@ import (
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/sdpower/ccusage-go/internal/calculator"
 	"github.com/sdpower/ccusage-go/internal/loader"
+	"github.com/sdpower/ccusage-go/internal/output"
 	"github.com/sdpower/ccusage-go/internal/pricing"
 	"github.com/sdpower/ccusage-go/internal/types"
 )
@@ -326,16 +327,11 @@ func (m *BlocksLiveModel) renderActiveBlock() string {
 	// Models section
 	modelsText := "⚙️  Models: "
 	if len(block.Models) > 0 {
-		// Simplify model names
+		// Simplify model names using unified formatting function
 		simplifiedModels := []string{}
 		for _, model := range block.Models {
-			parts := strings.Split(model, "-")
-			if len(parts) >= 3 {
-				// Extract model type and version
-				simplifiedModels = append(simplifiedModels, fmt.Sprintf("%s-%s", parts[1], parts[2]))
-			} else {
-				simplifiedModels = append(simplifiedModels, model)
-			}
+			shortModel := output.ShortenModelName(model)
+			simplifiedModels = append(simplifiedModels, shortModel)
 		}
 		modelsText += strings.Join(simplifiedModels, ", ")
 	} else {
