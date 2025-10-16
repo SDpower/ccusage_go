@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.10.1] - 2025-10-16
+
+### ✨ Features
+
+- **feat**: Add support for Haiku 4.5 model
+- **feat**: Update pricing for Sonnet 4.5
+
+### 🎨 Style
+
+- **style**: Standardize model display names to use hyphens (e.g., `Sonnet-4.5`)
+
+
+
 ## [v0.9.0] - 2024-08-24
 
 ### 🎉 Major Performance Improvements

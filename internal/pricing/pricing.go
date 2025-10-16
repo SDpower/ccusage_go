@@ -96,8 +96,10 @@ func (s *Service) getEmbeddedPricing(model string) (inputPrice, outputPrice, cac
 	embeddedPricing := map[string]ModelPricing{
 		"claude-3-5-sonnet-20241022": {InputCostPerToken: 0.000003, OutputCostPerToken: 0.000015, CacheCreationInputTokenCost: 0.00000375, CacheReadInputTokenCost: 0.0000003},
 		"claude-3-5-sonnet-20240620": {InputCostPerToken: 0.000003, OutputCostPerToken: 0.000015, CacheCreationInputTokenCost: 0.00000375, CacheReadInputTokenCost: 0.0000003},
+		"claude-sonnet-4-5-20250929": {InputCostPerToken: 0.000003, OutputCostPerToken: 0.000015, CacheCreationInputTokenCost: 0.00000375, CacheReadInputTokenCost: 0.0000003},
 		"claude-3-sonnet-20240229":   {InputCostPerToken: 0.000003, OutputCostPerToken: 0.000015, CacheCreationInputTokenCost: 0.00000375, CacheReadInputTokenCost: 0.0000003},
 		"claude-3-haiku-20240307":    {InputCostPerToken: 0.00000025, OutputCostPerToken: 0.00000125, CacheCreationInputTokenCost: 0.0000003, CacheReadInputTokenCost: 0.00000003},
+		"claude-haiku-4-5-20251001": {InputCostPerToken: 0.000001, OutputCostPerToken: 0.000005, CacheCreationInputTokenCost: 0.00000125, CacheReadInputTokenCost: 0.0000001},
 		"claude-3-opus-20240229":     {InputCostPerToken: 0.000015, OutputCostPerToken: 0.000075, CacheCreationInputTokenCost: 0.01875, CacheReadInputTokenCost: 0.0000015},
 		"gpt-4o":                     {InputCostPerToken: 0.000005, OutputCostPerToken: 0.000015, CacheCreationInputTokenCost: 0.0000125, CacheReadInputTokenCost: 0.0000005},
 		"gpt-4o-mini":                {InputCostPerToken: 0.00000015, OutputCostPerToken: 0.0000006, CacheCreationInputTokenCost: 0.000000375, CacheReadInputTokenCost: 0.000000015},

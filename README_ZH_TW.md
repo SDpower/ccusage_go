@@ -91,15 +91,15 @@ make install
 
 ```bash
 # macOS Apple Silicon
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.9.0/ccusage_go-darwin-arm64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.10.1/ccusage_go-darwin-arm64.tar.gz | tar xz
 sudo mv ccusage_go-darwin-arm64 /usr/local/bin/ccusage_go
 
 # macOS Intel
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.9.0/ccusage_go-darwin-amd64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.10.1/ccusage_go-darwin-amd64.tar.gz | tar xz
 sudo mv ccusage_go-darwin-amd64 /usr/local/bin/ccusage_go
 
 # Linux x64
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.9.0/ccusage_go-linux-amd64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.10.1/ccusage_go-linux-amd64.tar.gz | tar xz
 sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 ```
 
@@ -186,7 +186,7 @@ sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 - **增強的 TUI**：使用 Bubble Tea 框架建置
 - **效能快取**：透過顏色快取優化渲染
 - **"WITH GO" 標記**：所有報告都清楚標示為 Go 版本
-- **統一 Model 標籤**：支援最新的 Claude 模型格式（Opus-4, Sonnet-4, Opus-4.1, Sonnet-4.5）
+- **統一 Model 標籤**：支援最新的 Claude 模型格式（Opus-4, Sonnet-4, Opus-4.1, Sonnet-4.5, Haiku-4.5）
 
 ## 功能比較
 

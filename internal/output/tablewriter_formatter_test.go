@@ -13,6 +13,7 @@ func TestShortenModelName(t *testing.T) {
 		// 新的 4.1 和 4.5 格式
 		{"claude-opus-4-1-20250805", "Opus-4.1", "Opus 4.1 模型"},
 		{"claude-sonnet-4-5-20250929", "Sonnet-4.5", "Sonnet 4.5 模型"},
+		{"claude-haiku-4-5-20251001", "Haiku-4.5", "Haiku 4.5 模型"},
 
 		// 原有的標準格式
 		{"claude-opus-4-20250514", "Opus-4", "Opus 4 標準格式"},
