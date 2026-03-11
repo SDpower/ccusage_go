@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.11.0] - 2026-03-11
+
+### ✨ Features
+
+- **feat**: Add LIMITS section to `blocks --live` showing Claude API usage quota in real-time
+  - Displays session (5-hour) and weekly limits with color-coded progress bars
+  - Green (≤60%), yellow (60-90%), red (>90%) indicators
+  - Shows reset times in local timezone
+  - Graceful degradation when no OAuth token or API unavailable
+- **feat**: Add `internal/usage` package for Claude OAuth Usage API integration
+  - Cross-platform OAuth token reading (env var, credentials file, macOS Keychain)
+  - 5-minute in-memory cache with concurrent access protection
+
+### 🐛 Bug Fixes
+
+- **fix**: Fix model name display for dateless model IDs
+  - `claude-opus-4-6` now correctly shows as `Opus-4.6` (was `claude-opus-`)
+  - `claude-sonnet-4-6` now correctly shows as `Sonnet-4.6` (was `claude-sonne`)
+  - Tightened date regex to require 8-digit dates, preventing false matches
+
+### 📚 Documentation
+
+- Updated README and README_ZH_TW for v0.11.0
+- Updated blocks-live implementation docs with LIMITS section
+- Updated API integration docs with Claude OAuth Usage API
+- Updated live monitor screenshot
+
+---
+
 ## [v0.10.1] - 2025-10-16
 
 ### ✨ Features
