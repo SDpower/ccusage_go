@@ -91,15 +91,15 @@ Download from [GitHub Releases](https://github.com/SDpower/ccusage_go/releases)
 
 ```bash
 # macOS Apple Silicon
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.10.1/ccusage_go-darwin-arm64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.0/ccusage_go-darwin-arm64.tar.gz | tar xz
 sudo mv ccusage_go-darwin-arm64 /usr/local/bin/ccusage_go
 
 # macOS Intel
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.10.1/ccusage_go-darwin-amd64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.0/ccusage_go-darwin-amd64.tar.gz | tar xz
 sudo mv ccusage_go-darwin-amd64 /usr/local/bin/ccusage_go
 
 # Linux x64
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.10.1/ccusage_go-linux-amd64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.0/ccusage_go-linux-amd64.tar.gz | tar xz
 sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 ```
 
@@ -174,6 +174,7 @@ sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 - 💬 **Session Analysis**: Usage by conversation session
 - ⏱️ **Billing Blocks**: 5-hour billing window tracking
 - 🔴 **Live Monitoring**: Real-time usage dashboard with gradient progress bars
+- 📊 **Usage Limits**: Live display of Claude API quota (session/weekly limits)
 - 🎨 **Multiple Output Formats**: Table (default), JSON, CSV
 - 🌍 **Timezone Support**: Configurable timezone for reports
 - 💾 **Offline Mode**: Works without internet connection
@@ -186,7 +187,7 @@ sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 - **Enhanced TUI**: Built with Bubble Tea framework
 - **Performance Caching**: Optimized rendering with color caching
 - **"WITH GO" Branding**: All reports clearly marked as Go version
-- **Unified Model Labels**: Support for latest Claude model formats (Opus-4, Sonnet-4, Opus-4.1, Sonnet-4.5, Haiku-4.5)
+- **Unified Model Labels**: Support for latest Claude model formats (Opus-4.6, Sonnet-4.6, Opus-4.5, Sonnet-4.5, Haiku-4.5)
 
 ## Feature Comparison
 
@@ -252,7 +253,8 @@ ccusage_go/
 │   ├── monitor/        # Live monitoring features
 │   ├── output/         # Formatting and display
 │   ├── pricing/        # Price fetching and caching
-│   └── types/          # Type definitions
+│   ├── types/          # Type definitions
+│   └── usage/          # Claude API usage limits
 ├── docs/               # Documentation
 └── test_data/          # Test fixtures
 ```

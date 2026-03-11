@@ -91,15 +91,15 @@ make install
 
 ```bash
 # macOS Apple Silicon
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.10.1/ccusage_go-darwin-arm64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.0/ccusage_go-darwin-arm64.tar.gz | tar xz
 sudo mv ccusage_go-darwin-arm64 /usr/local/bin/ccusage_go
 
 # macOS Intel
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.10.1/ccusage_go-darwin-amd64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.0/ccusage_go-darwin-amd64.tar.gz | tar xz
 sudo mv ccusage_go-darwin-amd64 /usr/local/bin/ccusage_go
 
 # Linux x64
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.10.1/ccusage_go-linux-amd64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.0/ccusage_go-linux-amd64.tar.gz | tar xz
 sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 ```
 
@@ -174,6 +174,7 @@ sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 - 💬 **對話分析**：依對話階段的使用量
 - ⏱️ **計費區塊**：5 小時計費視窗追蹤
 - 🔴 **即時監控**：具有漸變進度條的即時使用量儀表板
+- 📊 **使用量配額**：即時顯示 Claude API 配額（session/每週限額）
 - 🎨 **多種輸出格式**：表格（預設）、JSON、CSV
 - 🌍 **時區支援**：可配置報告時區
 - 💾 **離線模式**：無需網路連線即可運作
@@ -186,7 +187,7 @@ sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 - **增強的 TUI**：使用 Bubble Tea 框架建置
 - **效能快取**：透過顏色快取優化渲染
 - **"WITH GO" 標記**：所有報告都清楚標示為 Go 版本
-- **統一 Model 標籤**：支援最新的 Claude 模型格式（Opus-4, Sonnet-4, Opus-4.1, Sonnet-4.5, Haiku-4.5）
+- **統一 Model 標籤**：支援最新的 Claude 模型格式（Opus-4.6, Sonnet-4.6, Opus-4.5, Sonnet-4.5, Haiku-4.5）
 
 ## 功能比較
 
@@ -252,7 +253,8 @@ ccusage_go/
 │   ├── monitor/        # 即時監控功能
 │   ├── output/         # 格式化和顯示
 │   ├── pricing/        # 價格取得和快取
-│   └── types/          # 類型定義
+│   ├── types/          # 類型定義
+│   └── usage/          # Claude API 使用量配額
 ├── docs/               # 文件
 └── test_data/          # 測試資料
 ```

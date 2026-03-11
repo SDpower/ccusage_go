@@ -34,7 +34,20 @@
    - 預測 session 結束時的總使用量
    - 狀態指標（WITHIN LIMIT/APPROACHING LIMIT/EXCEEDS LIMIT）
 
-4. **Models**
+4. **LIMITS**
+   - 圖標：📊
+   - 顯示 Claude API 使用量配額資訊（對應 Claude Code `/usage` 命令）
+   - 3 個使用量層級：
+     - Current session（5 小時窗口）
+     - Current week - all models（7 天窗口）
+     - Current week - Sonnet only（7 天 Sonnet 窗口）
+     - Current week - Opus only（7 天 Opus 窗口，若有）
+   - 每個層級顯示進度條與重置時間
+   - 進度條顏色策略：≤60% 綠色、60-90% 黃色、>90% 紅色
+   - 資料來源：Claude OAuth API（5 分鐘快取）
+   - 優雅降級：無 OAuth token 或 API 失敗時不顯示此區塊
+
+5. **Models**
    - 圖標：⚙️
    - 顯示使用的模型列表
 

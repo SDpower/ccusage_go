@@ -580,7 +580,7 @@ func ShortenModelName(model string) string {
 	// claude-haiku-3-20240307 -> Haiku-3
 
 	// 首先嘗試匹配帶小版本號的格式: claude-{type}-{major}-{minor}-{date}
-	re := regexp.MustCompile(`^claude-(\w+)-(\d+)-(\d+)-\d+`)
+	re := regexp.MustCompile(`^claude-(\w+)-(\d+)-(\d+)-\d{8}`)
 	if matches := re.FindStringSubmatch(model); matches != nil {
 		modelType := strings.Title(strings.ToLower(matches[1]))  // 首字母大寫
 		majorVersion := matches[2]
@@ -589,13 +589,27 @@ func ShortenModelName(model string) string {
 	}
 
 	// 然後嘗試匹配標準格式: claude-{type}-{version}-{date}
-	re = regexp.MustCompile(`^claude-(\w+)-(\d+)-\d+`)
+	re = regexp.MustCompile(`^claude-(\w+)-(\d+)-\d{8}`)
 	if matches := re.FindStringSubmatch(model); matches != nil {
 		modelType := strings.Title(strings.ToLower(matches[1]))  // 首字母大寫
 		version := matches[2]
 		return fmt.Sprintf("%s-%s", modelType, version)
 	}
-	
+
+	// 無日期後綴、帶小版本: claude-{type}-{major}-{minor}
+	re = regexp.MustCompile(`^claude-(\w+)-(\d+)-(\d+)$`)
+	if matches := re.FindStringSubmatch(model); matches != nil {
+		modelType := strings.Title(strings.ToLower(matches[1]))
+		return fmt.Sprintf("%s-%s.%s", modelType, matches[2], matches[3])
+	}
+
+	// 無日期後綴、無小版本: claude-{type}-{major}
+	re = regexp.MustCompile(`^claude-(\w+)-(\d+)$`)
+	if matches := re.FindStringSubmatch(model); matches != nil {
+		modelType := strings.Title(strings.ToLower(matches[1]))
+		return fmt.Sprintf("%s-%s", modelType, matches[2])
+	}
+
 	// Special handling for known non-Claude models
 	knownModels := map[string]string{
 		"gpt-4o":        "gpt-4o",

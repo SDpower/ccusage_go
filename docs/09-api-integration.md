@@ -225,9 +225,53 @@ func (rl *RateLimiter) Allow() bool {
 }
 ```
 
-## 4. LiteLLM 價格 API
+## 4. Claude OAuth Usage API
 
-### 4.1 價格 API 客戶端
+### 4.1 概述
+
+整合 Claude OAuth API 端點以取得使用量配額資訊，用於 `blocks --live` 模式的 LIMITS 區塊。
+
+### 4.2 API 端點
+
+- **URL**: `https://api.anthropic.com/api/oauth/usage`
+- **方法**: GET
+- **認證**: `Authorization: Bearer <oauth_token>`
+- **必要 Header**: `anthropic-beta: oauth-2025-04-20`
+
+### 4.3 回應結構
+
+```json
+{
+  "five_hour": { "utilization": 5.0, "resets_at": "2026-03-11T18:00:00+00:00" },
+  "seven_day": { "utilization": 50.0, "resets_at": "2026-03-13T02:00:00+00:00" },
+  "seven_day_sonnet": { "utilization": 2.0, "resets_at": "2026-03-13T19:00:00+00:00" },
+  "seven_day_opus": null
+}
+```
+
+每個層級可能為 `null`（例如無 Opus 訂閱時 `seven_day_opus` 為 null）。
+
+### 4.4 OAuth Token 讀取策略
+
+跨平台支援，依以下優先順序嘗試：
+
+1. **環境變數** `CLAUDE_CODE_OAUTH_TOKEN` — 最優先（CI/CD、容器環境）
+2. **Credential 檔案** `$CLAUDE_CONFIG_DIR/.credentials.json` 或 `~/.claude/.credentials.json` — Linux/Windows
+3. **macOS Keychain** — `security find-generic-password -s "Claude Code-credentials" -w`（僅 macOS，作為 fallback）
+
+### 4.5 快取機制
+
+- 記憶體快取，TTL 5 分鐘
+- 使用 `sync.RWMutex` 保護並發存取
+- 快取過期後自動重新呼叫 API
+
+### 4.6 優雅降級
+
+任何錯誤（無 token、API 失敗、網路不可用）時回傳 nil，不影響其他功能。
+
+## 5. LiteLLM 價格 API
+
+### 5.1 價格 API 客戶端
 
 ```go
 package pricing
@@ -353,7 +397,7 @@ func (pc *PricingClient) convertToPricingTable(data LiteLLMResponse) *PricingTab
 }
 ```
 
-### 4.2 離線價格資料
+### 5.2 離線價格資料
 
 ```go
 func (pc *PricingClient) loadOfflinePricing() (*PricingTable, error) {
@@ -388,7 +432,7 @@ func (pc *PricingClient) loadOfflinePricing() (*PricingTable, error) {
 }
 ```
 
-### 4.3 價格快取
+### 5.3 價格快取
 
 ```go
 type PricingCache struct {
@@ -435,9 +479,9 @@ func (pc *PricingCache) Invalidate() {
 }
 ```
 
-## 5. MCP Server 實作
+## 6. MCP Server 實作
 
-### 5.1 MCP Server 結構
+### 6.1 MCP Server 結構
 
 ```go
 package mcp
@@ -538,7 +582,7 @@ func (s *MCPServer) handleRequest(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-### 5.2 MCP 方法處理
+### 6.2 MCP 方法處理
 
 ```go
 func (s *MCPServer) handleDailyUsage(params json.RawMessage) (interface{}, error) {
@@ -628,7 +672,7 @@ func (s *MCPServer) sendError(w http.ResponseWriter, id interface{}, code int, m
 }
 ```
 
-### 5.3 WebSocket 支援
+### 6.3 WebSocket 支援
 
 ```go
 type WebSocketServer struct {
@@ -703,9 +747,9 @@ func (ws *WebSocketServer) Broadcast(message interface{}) {
 }
 ```
 
-## 6. 第三方 API 整合
+## 7. 第三方 API 整合
 
-### 6.1 通用 API 客戶端介面
+### 7.1 通用 API 客戶端介面
 
 ```go
 type APIClient interface {
@@ -728,7 +772,7 @@ func (c *BaseAPIClient) addAuth(req *http.Request) {
 }
 ```
 
-### 6.2 Webhook 支援
+### 7.2 Webhook 支援
 
 ```go
 type WebhookClient struct {
@@ -794,9 +838,9 @@ func (wc *WebhookClient) generateSignature(payload []byte) string {
 }
 ```
 
-## 7. GraphQL 支援
+## 8. GraphQL 支援
 
-### 7.1 GraphQL 客戶端
+### 8.1 GraphQL 客戶端
 
 ```go
 type GraphQLClient struct {
@@ -843,9 +887,9 @@ func (gc *GraphQLClient) Query(ctx context.Context, query string, variables map[
 }
 ```
 
-## 8. 認證機制
+## 9. 認證機制
 
-### 8.1 Token 管理
+### 9.1 Token 管理
 
 ```go
 type TokenManager struct {
@@ -895,7 +939,7 @@ func (tm *TokenManager) RefreshToken(service string, refreshFunc func() (string,
 }
 ```
 
-### 8.2 OAuth2 支援
+### 9.2 OAuth2 支援
 
 ```go
 type OAuth2Client struct {
@@ -944,9 +988,9 @@ func (oc *OAuth2Client) GetClient(ctx context.Context) *http.Client {
 }
 ```
 
-## 9. 錯誤處理
+## 10. 錯誤處理
 
-### 9.1 API 錯誤類型
+### 10.1 API 錯誤類型
 
 ```go
 type APIError struct {
@@ -978,9 +1022,9 @@ var (
 )
 ```
 
-## 10. 測試策略
+## 11. 測試策略
 
-### 10.1 Mock HTTP 客戶端
+### 11.1 Mock HTTP 客戶端
 
 ```go
 type MockHTTPClient struct {
@@ -1020,7 +1064,7 @@ func (m *MockHTTPClient) Get(ctx context.Context, path string) (*Response, error
 }
 ```
 
-### 10.2 整合測試
+### 11.2 整合測試
 
 ```go
 func TestPricingAPI(t *testing.T) {
@@ -1051,7 +1095,7 @@ func TestPricingAPI(t *testing.T) {
 }
 ```
 
-## 11. 與 TypeScript 版本對照
+## 12. 與 TypeScript 版本對照
 
 | TypeScript 元素 | Go 元素 | 說明 |
 |----------------|---------|------|

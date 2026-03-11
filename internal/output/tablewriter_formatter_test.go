@@ -20,6 +20,12 @@ func TestShortenModelName(t *testing.T) {
 		{"claude-sonnet-4-20250514", "Sonnet-4", "Sonnet 4 標準格式"},
 		{"claude-haiku-3-20240307", "Haiku-3", "Haiku 3 模型"},
 
+		// 無日期後綴的新格式
+		{"claude-opus-4-6", "Opus-4.6", "Opus 4.6 無日期格式"},
+		{"claude-sonnet-4-6", "Sonnet-4.6", "Sonnet 4.6 無日期格式"},
+		{"claude-haiku-4-5", "Haiku-4.5", "Haiku 4.5 無日期格式"},
+		{"claude-opus-4", "Opus-4", "Opus 4 無日期無小版本"},
+
 		// 非 Claude 模型
 		{"gpt-4o", "gpt-4o", "GPT-4o 模型"},
 		{"gpt-4o-mini", "gpt-4o-mini", "GPT-4o-mini 模型"},

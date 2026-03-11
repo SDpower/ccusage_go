@@ -22,6 +22,7 @@ import (
 	"github.com/sdpower/ccusage-go/internal/output"
 	"github.com/sdpower/ccusage-go/internal/pricing"
 	"github.com/sdpower/ccusage-go/internal/types"
+	"github.com/sdpower/ccusage-go/internal/usage"
 )
 
 // Burn rate thresholds for indicators
@@ -44,28 +45,48 @@ type BlocksLiveConfig struct {
 
 // BlocksLiveModel represents the state of the live monitor
 type BlocksLiveModel struct {
-	config        BlocksLiveConfig
-	activeBlock   *types.SessionBlock
-	lastUpdate    time.Time
-	err           error
-	width         int
-	height        int
-	quitting      bool
-	loader        *loader.Loader
-	calculator    *calculator.Calculator
-	allEntries    []types.UsageEntry
-	gradientCache map[string][]string // Cache for gradient colors
+	config         BlocksLiveConfig
+	activeBlock    *types.SessionBlock
+	lastUpdate     time.Time
+	err            error
+	width          int
+	height         int
+	quitting       bool
+	loader         *loader.Loader
+	calculator     *calculator.Calculator
+	allEntries     []types.UsageEntry
+	gradientCache  map[string][]string // Cache for gradient colors
+	usageClient    *usage.Client
+	usageLimits    *usage.UsageResponse
+	usageLastFetch time.Time
 }
 
 // blocksTickMsg is sent periodically to update the display
 type blocksTickMsg time.Time
 
+// usageLimitsMsg carries the result of fetching usage limits
+type usageLimitsMsg struct {
+	response *usage.UsageResponse
+}
+
+// fetchUsageLimitsCmd returns a command that fetches usage limits asynchronously
+func fetchUsageLimitsCmd(client *usage.Client) tea.Cmd {
+	return func() tea.Msg {
+		resp := client.GetUsage(context.Background())
+		return usageLimitsMsg{response: resp}
+	}
+}
+
 // Init initializes the model
 func (m *BlocksLiveModel) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		blocksTickCmd(m.config.RefreshInterval),
 		tea.WindowSize(),
-	)
+	}
+	if m.usageClient != nil {
+		cmds = append(cmds, fetchUsageLimitsCmd(m.usageClient))
+	}
+	return tea.Batch(cmds...)
 }
 
 // Update handles messages
@@ -81,6 +102,13 @@ func (m *BlocksLiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+
+	case usageLimitsMsg:
+		if msg.response != nil {
+			m.usageLimits = msg.response
+			m.usageLastFetch = time.Now()
+		}
+		return m, nil
 
 	case blocksTickMsg:
 		// Reload data and find active block
@@ -133,8 +161,13 @@ func (m *BlocksLiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.lastUpdate = time.Now()
 		m.err = nil
-		
-		return m, blocksTickCmd(m.config.RefreshInterval)
+
+		// Re-fetch usage limits if cache expired
+		cmds := []tea.Cmd{blocksTickCmd(m.config.RefreshInterval)}
+		if m.usageClient != nil && time.Since(m.usageLastFetch) > 5*time.Minute {
+			cmds = append(cmds, fetchUsageLimitsCmd(m.usageClient))
+		}
+		return m, tea.Batch(cmds...)
 	}
 
 	return m, nil
@@ -324,6 +357,12 @@ func (m *BlocksLiveModel) renderActiveBlock() string {
 		table.Append([]string{projectionLine})
 	}
 	
+	// LIMITS section
+	limitsSection := m.renderLimitsSection()
+	if limitsSection != "" {
+		table.Append([]string{limitsSection})
+	}
+
 	// Models section
 	modelsText := "⚙️  Models: "
 	if len(block.Models) > 0 {
@@ -373,6 +412,67 @@ func (m *BlocksLiveModel) renderActiveBlock() string {
 	}
 	
 	return buf.String()
+}
+
+// renderLimitsSection renders the usage limits section for the table
+func (m *BlocksLiveModel) renderLimitsSection() string {
+	if m.usageLimits == nil {
+		return ""
+	}
+
+	type limitTier struct {
+		label string
+		entry *usage.UsageLimitEntry
+	}
+
+	tiers := []limitTier{
+		{"Current session", m.usageLimits.FiveHour},
+		{"Current week (all models)", m.usageLimits.SevenDay},
+		{"Current week (Sonnet only)", m.usageLimits.SevenDaySonnet},
+		{"Current week (Opus only)", m.usageLimits.SevenDayOpus},
+	}
+
+	// Determine progress bar width (same logic as renderCompactSectionAsString)
+	progressBarWidth := 40
+	if m.width > 0 {
+		availableWidth := m.width - 2
+		if availableWidth >= 120 {
+			progressBarWidth = 50
+		} else if availableWidth >= 100 {
+			progressBarWidth = 45
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\n")
+	sb.WriteString("📊 LIMITS")
+
+	for _, tier := range tiers {
+		if tier.entry == nil {
+			continue
+		}
+
+		// Determine color based on utilization
+		color := "green"
+		if tier.entry.Utilization > 60 {
+			color = "yellow"
+		}
+		if tier.entry.Utilization > 90 {
+			color = "red"
+		}
+
+		progressBar := m.renderEnhancedProgressBar(tier.entry.Utilization, progressBarWidth, color)
+		resetTime := usage.FormatResetTime(tier.entry.ResetsAt, m.config.Timezone)
+
+		sb.WriteString(fmt.Sprintf("\n             %s", tier.label))
+		sb.WriteString(fmt.Sprintf("\n             %s %.0f%% used", progressBar, tier.entry.Utilization))
+		if resetTime != "" {
+			sb.WriteString(fmt.Sprintf("\n             %s", resetTime))
+		}
+	}
+
+	sb.WriteString("\n")
+	return sb.String()
 }
 
 // renderCompactSectionAsString renders a compact section as a single string for table cell
@@ -722,11 +822,12 @@ func StartBlocksLiveMonitoring(config BlocksLiveConfig) error {
 
 	// Create initial model
 	model := &BlocksLiveModel{
-		config:     config,
-		lastUpdate: time.Now(),
-		loader:     dataLoader,
-		calculator: calc,
+		config:        config,
+		lastUpdate:    time.Now(),
+		loader:        dataLoader,
+		calculator:    calc,
 		gradientCache: make(map[string][]string),
+		usageClient:   usage.NewClient(),
 	}
 
 	// Setup signal handling for graceful shutdown
