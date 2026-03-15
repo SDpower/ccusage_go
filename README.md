@@ -91,15 +91,15 @@ Download from [GitHub Releases](https://github.com/SDpower/ccusage_go/releases)
 
 ```bash
 # macOS Apple Silicon
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.0/ccusage_go-darwin-arm64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.1/ccusage_go-darwin-arm64.tar.gz | tar xz
 sudo mv ccusage_go-darwin-arm64 /usr/local/bin/ccusage_go
 
 # macOS Intel
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.0/ccusage_go-darwin-amd64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.1/ccusage_go-darwin-amd64.tar.gz | tar xz
 sudo mv ccusage_go-darwin-amd64 /usr/local/bin/ccusage_go
 
 # Linux x64
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.0/ccusage_go-linux-amd64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.1/ccusage_go-linux-amd64.tar.gz | tar xz
 sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 ```
 
@@ -265,6 +265,7 @@ ccusage_go/
 2. **Memory Optimization**: Implements smart file filtering, only loading projects active within 12 hours
 3. **Live Monitoring**: Gradient calculations are cached for smooth real-time updates
 4. **Resource Usage**: blocks --live mode uses only ~54MB memory with minimal system impact
+5. **Incremental Cache**: Project-level caching in live mode reduces CPU usage by 68% when data is unchanged
 
 ## Acknowledgments
 

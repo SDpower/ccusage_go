@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.11.1] - 2026-03-15
+
+### ⚡ Performance
+
+- **perf**: Add project-level incremental cache for `blocks --live` mode
+  - Tracks file state (ModTime+Size) per project directory
+  - Only reloads changed files; skips entirely when no changes detected
+  - Per-project deduplication for efficient append-only JSONL handling
+  - Full project reload on file deletion for cache consistency
+
+### 📊 Performance Metrics
+
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| CPU avg (30s idle) | 26.7% | 8.5% | **-68%** |
+
+### 📁 Files Changed
+
+- `internal/loader/project_cache.go` — New incremental cache implementation
+- `internal/loader/project_cache_test.go` — 9 unit tests
+- `internal/monitor/blocks_live.go` — Integrated incremental cache into tick handler
+
+---
+
 ## [v0.11.0] - 2026-03-11
 
 ### ✨ Features

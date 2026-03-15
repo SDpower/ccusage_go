@@ -59,6 +59,7 @@ type BlocksLiveModel struct {
 	usageClient    *usage.Client
 	usageLimits    *usage.UsageResponse
 	usageLastFetch time.Time
+	cache          *loader.IncrementalCache // Incremental project-level cache
 }
 
 // blocksTickMsg is sent periodically to update the display
@@ -111,51 +112,31 @@ func (m *BlocksLiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case blocksTickMsg:
-		// Reload data and find active block
-		ctx := context.Background()
-		
-		// Use optimized loading if enabled
-		var entries []types.UsageEntry
-		var err error
-		if m.config.OptimizeMemory {
-			// Only load recent data (last 24 hours) for live monitoring
-			// Matches TypeScript version's RETENTION_HOURS = 24
-			// Enable stream processing to calculate costs during loading
-			options := &loader.LoaderOptions{
-				OnlyActiveSession: true,
-				ModifiedWithin:    24 * time.Hour,
-				MaxFiles:          100, // Limit to most recent 100 files
-				StreamProcessing:  true, // Calculate costs immediately after reading each file
-				Calculator:        m.calculator, // Pass calculator for stream processing
-			}
-			entries, err = m.loader.LoadFromPathWithOptions(ctx, m.config.DataPath, options)
-		} else {
-			entries, err = m.loader.LoadFromPath(ctx, m.config.DataPath)
-		}
-		
+		// Use incremental cache for efficient reloading
+		entries, changed, err := m.cache.Update(
+			m.loader, m.calculator,
+			m.config.DataPath,
+			24*time.Hour,
+		)
 		if err != nil {
 			m.err = err
 			return m, blocksTickCmd(m.config.RefreshInterval)
 		}
 
-		// Calculate costs only if stream processing was not used
-		if !m.config.OptimizeMemory {
-			entries, err = m.calculator.CalculateCosts(ctx, entries)
-			if err != nil {
-				m.err = err
-				return m, blocksTickCmd(m.config.RefreshInterval)
+		if changed || m.activeBlock == nil {
+			// Data changed or no active block yet — recalculate
+			blocks := m.calculator.IdentifySessionBlocks(entries, m.config.SessionLength)
+			m.activeBlock = nil
+			for i := range blocks {
+				if blocks[i].IsActive {
+					m.activeBlock = &blocks[i]
+					break
+				}
 			}
-		}
-
-		// Identify session blocks
-		blocks := m.calculator.IdentifySessionBlocks(entries, m.config.SessionLength)
-		
-		// Find active block
-		m.activeBlock = nil
-		for i := range blocks {
-			if blocks[i].IsActive {
-				m.activeBlock = &blocks[i]
-				break
+		} else if m.activeBlock != nil {
+			// Data unchanged, but check if active block has expired
+			if time.Now().After(m.activeBlock.EndTime) {
+				m.activeBlock = nil
 			}
 		}
 
@@ -828,6 +809,7 @@ func StartBlocksLiveMonitoring(config BlocksLiveConfig) error {
 		calculator:    calc,
 		gradientCache: make(map[string][]string),
 		usageClient:   usage.NewClient(),
+		cache:         loader.NewIncrementalCache(),
 	}
 
 	// Setup signal handling for graceful shutdown

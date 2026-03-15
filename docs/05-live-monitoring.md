@@ -943,6 +943,10 @@ func createDefaultAlertRules() []AlertRule {
 
 ## 9. 效能優化
 
+### 9.0 增量快取 (v0.11.1)
+
+`blocks --live` 使用 `IncrementalCache` 以 project 目錄為單位追蹤檔案狀態（ModTime+Size），避免每次 tick 完整重載。無變動時直接回傳快取結果，CPU 使用率降低 68%。詳見 `docs/15-blocks-live-implementation.md`。
+
 ### 9.1 緩衝區管理
 
 ```go

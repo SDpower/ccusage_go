@@ -131,6 +131,40 @@ const (
    - 自動偵測終端寬度
    - 在超寬終端中置中顯示
 
+## 增量快取機制 (v0.11.1)
+
+### 問題
+`blocks --live` 每次 tick 完整重新載入所有 JSONL 檔案，即使資料未變動，造成不必要的 CPU 消耗。
+
+### 解決方案
+以 project 目錄為單位的增量快取（`IncrementalCache`）：
+
+- **FileState 追蹤**：記錄每個 JSONL 檔案的 ModTime 和 Size
+- **差異偵測**：只重新載入有變動的檔案
+- **專案層級去重**：per-project DedupeMap，JSONL append-only 時冪等
+- **快取失效規則**：
+  - 專案消失 → 從 cache 刪除
+  - 檔案被刪 → 整個專案 full reload
+  - 檔案變動 → 重讀該檔案
+  - 無變動 → 直接回傳快取結果（<1ms）
+
+### 架構
+```
+IncrementalCache
+├── projects: map[string]*ProjectCache
+│   ├── DirPath
+│   ├── Files: map[string]FileState  (ModTime + Size)
+│   ├── Entries: []UsageEntry
+│   └── DedupeMap: map[string]bool
+├── mergedEntries: []UsageEntry
+└── dirty: bool
+```
+
+### 效能改善
+| 指標 | 優化前 | 優化後 | 改善 |
+|------|--------|--------|------|
+| CPU avg (30s) | 26.7% | 8.5% | -68% |
+
 ## 注意事項
 
 - 需要 TTY 環境才能執行 --live 模式

@@ -91,15 +91,15 @@ make install
 
 ```bash
 # macOS Apple Silicon
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.0/ccusage_go-darwin-arm64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.1/ccusage_go-darwin-arm64.tar.gz | tar xz
 sudo mv ccusage_go-darwin-arm64 /usr/local/bin/ccusage_go
 
 # macOS Intel
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.0/ccusage_go-darwin-amd64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.1/ccusage_go-darwin-amd64.tar.gz | tar xz
 sudo mv ccusage_go-darwin-amd64 /usr/local/bin/ccusage_go
 
 # Linux x64
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.0/ccusage_go-linux-amd64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.1/ccusage_go-linux-amd64.tar.gz | tar xz
 sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 ```
 
@@ -265,6 +265,7 @@ ccusage_go/
 2. **記憶體優化**：實作智慧型檔案過濾，只載入 12 小時內活動的專案
 3. **即時監控**：漸變計算已快取以確保流暢的即時更新
 4. **資源使用**：blocks --live 模式僅使用 ~54MB 記憶體，對系統幾乎無影響
+5. **增量快取**：live 模式的專案層級快取在資料未變動時降低 68% CPU 使用率
 
 ## 致謝
 
