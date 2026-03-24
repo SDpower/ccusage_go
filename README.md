@@ -117,6 +117,12 @@ sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 # Session-based analysis
 ./ccusage_go session
 
+# Query specific session by name
+./ccusage_go session --session-name my-feature
+
+# Query specific session by ID
+./ccusage_go session --session-id ca81db6e-cb9b-4b53-995b-f5d58b0e52f1
+
 # 5-hour billing blocks
 ./ccusage_go blocks
 
@@ -169,6 +175,7 @@ sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 
 ### ✅ Implemented Features
 
+- 💰 **Detailed Cost Breakdown**: API Cost, Cache Create Cost (CC Cost), Cache Read Cost (CR Cost), and Total Cost per report row
 - 📊 **Daily Reports**: Token usage and costs per day
 - 📈 **Monthly Reports**: Aggregated monthly statistics  
 - 💬 **Session Analysis**: Usage by conversation session

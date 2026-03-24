@@ -2,6 +2,57 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.12.0] - 2026-03-24
+
+### ✨ Features
+
+- **feat**: 新增 Session Name 顯示與查詢功能
+  - 從 JSONL 中解析 `custom-title` 和 `agent-name` 條目取得 session name
+  - `session` 命令新增 `--session-id` flag，依 UUID 精確查詢特定 session
+  - `session` 命令新增 `--session-name` flag，依 session name 精確查詢
+  - Session 報表優先顯示 session name（無 name 時回退為 project path）
+  - 跨檔案全局回填 SessionName（subagent 檔案也能正確顯示）
+- **feat**: Session 過濾模式新增 Source File 明細
+  - `--session-id` / `--session-name` 查詢時，以 Session 為大區塊，逐行列出每個 Source File
+  - 每個 Source File 獨立顯示 Models、Input、Output、Cache、Cost、Last Activity
+  - 一般模式維持 Files 數字欄不變
+- **feat**: Daily/Monthly 報表新增 Sessions 數量欄
+  - 統計每個時間區間內的唯一 session 數量
+  - Footer 顯示總計唯一 session 數量
+- **feat**: Session 報表新增 Session IDs 和 Source Files 追蹤
+  - SessionInfo 收集所有唯一 Session UUID 和 Source File 路徑
+  - CSV 輸出新增 `session_name`、`session_ids`、`source_files` 欄位
+- **feat**: Last Activity 欄顯示日期+時間（當地時區）
+- **feat**: 所有報表新增 CC Cost / CR Cost / API Cost 獨立欄位
+  - Cache Create Cost 和 Cache Read Cost 分別顯示
+  - API Cost 只含 input + output 費用
+  - 舊版資料無 cache 時欄位顯示 `-`
+- **feat**: Blocks 報表新增 token 和費用明細
+  - 從單一 Tokens + Cost 欄拆分為 Input / Output / Cache Create / CC Cost / Cache Read / CR Cost / Total Tokens / API Cost / Cost
+  - Gap 行和 REMAINING/PROJECTED 特殊行同步更新
+
+### 📁 Files Changed
+
+- `internal/types/usage.go` — 新增 SessionName、SessionIDs、SourceFiles、SourceFile、SourceFileStat
+- `internal/loader/loader.go` — 攔截 custom-title/agent-name、設定 SourceFile、全局 sessionNameMap 回填
+- `internal/commands/session.go` — 新增 --session-id/--session-name flags、過濾模式調用 detail 報表
+- `internal/commands/shared.go` — 新增 filterEntriesBySessionID/Name 輔助函式
+- `internal/calculator/calculator.go` — GenerateSessionReport 收集 SessionName/SessionIDs/SourceFiles、新增 AggregateBySourceFile
+- `internal/output/tablewriter_formatter.go` — FormatSessionDetailReport、Session name 顯示、Sessions 欄、Last Activity 含時間和時區
+- `internal/output/formatter.go` — CSV 格式加入 session_name/session_ids/source_files
+- `internal/types/usage.go` — UsageEntry、SessionInfo、SourceFileStat 新增 CacheCreateCost / CacheReadCost 欄位
+- `internal/calculator/calculator.go` — 分別計算 cache create / cache read 費用
+- `internal/output/tablewriter_formatter.go` — 報表新增 CC Cost (USD) / CR Cost (USD) / API Cost (USD) 欄位
+
+### 🧪 Tests Added
+
+- `internal/loader/session_name_test.go` — 6 tests (custom-title, agent-name, priority, empty, cross-file, source-file)
+- `internal/calculator/session_report_test.go` — 6 tests (session name, multiple, empty, session IDs, source files, aggregate)
+- `internal/commands/session_filter_test.go` — 5 tests (ID/name filter, no match, empty)
+- `internal/output/session_count_test.go` — 7 tests (session name, session IDs, files column, detail report, CSV, daily/monthly sessions)
+
+---
+
 ## [v0.11.1] - 2026-03-15
 
 ### ⚡ Performance

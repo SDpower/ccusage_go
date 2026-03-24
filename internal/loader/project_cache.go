@@ -167,7 +167,7 @@ func (ic *IncrementalCache) Update(
 		// Load changed files
 		ic.dirty = true
 		for _, filePath := range filesToLoad {
-			fileEntries, loadErr := l.loadFileWithDedupe(filePath, pc.DedupeMap)
+			fileEntries, _, loadErr := l.loadFileWithDedupe(filePath, pc.DedupeMap)
 			if loadErr != nil {
 				if l.debug {
 					fmt.Fprintf(os.Stderr, "Debug: Error loading file %s: %v\n", filePath, loadErr)

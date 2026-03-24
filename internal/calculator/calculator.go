@@ -47,20 +47,23 @@ func (c *Calculator) calculateSingleCost(ctx context.Context, entry *types.Usage
 		return
 	}
 
-	// Calculate cost using per-token pricing (not per-1000 tokens)
-	cost := float64(entry.InputTokens)*inputPrice +
+	// Calculate API cost (input + output only, no cache)
+	apiCost := float64(entry.InputTokens)*inputPrice +
 		float64(entry.OutputTokens)*outputPrice
-	
-	// Add cache token costs if present
+	entry.APICost = apiCost
+
+	// Calculate total cost including cache tokens
+	cost := apiCost
 	if entry.Raw != nil {
 		if cacheCreate, ok := entry.Raw["cache_creation_input_tokens"].(int); ok {
-			cost += float64(cacheCreate) * cacheCreatePrice
+			entry.CacheCreateCost = float64(cacheCreate) * cacheCreatePrice
+			cost += entry.CacheCreateCost
 		}
 		if cacheRead, ok := entry.Raw["cache_read_input_tokens"].(int); ok {
-			cost += float64(cacheRead) * cacheReadPrice
+			entry.CacheReadCost = float64(cacheRead) * cacheReadPrice
+			cost += entry.CacheReadCost
 		}
 	}
-	
 	entry.Cost = cost
 }
 
@@ -122,20 +125,40 @@ func (c *Calculator) GenerateSessionReport(entries []types.UsageEntry) []types.S
 
 		session.Duration = session.EndTime.Sub(session.StartTime)
 		
-		// Track unique models
+		// Track unique models, session IDs, and source files
 		modelSet := make(map[string]bool)
+		sessionIDSet := make(map[string]bool)
+		sourceFileSet := make(map[string]bool)
 
 		for _, entry := range sessionEntries {
 			session.TotalCost += entry.Cost
+			session.TotalAPICost += entry.APICost
+			session.CacheCreateCost += entry.CacheCreateCost
+			session.CacheReadCost += entry.CacheReadCost
 			session.TotalTokens += entry.TotalTokens
 			session.InputTokens += entry.InputTokens
 			session.OutputTokens += entry.OutputTokens
-			
+
+			// Collect session name from first entry that has one
+			if session.SessionName == "" && entry.SessionName != "" {
+				session.SessionName = entry.SessionName
+			}
+
+			// Track unique session IDs
+			if entry.SessionID != "" {
+				sessionIDSet[entry.SessionID] = true
+			}
+
+			// Track unique source files
+			if entry.SourceFile != "" {
+				sourceFileSet[entry.SourceFile] = true
+			}
+
 			// Track models (exclude synthetic)
 			if entry.Model != "" && entry.Model != "<synthetic>" {
 				modelSet[entry.Model] = true
 			}
-			
+
 			// Extract cache tokens from Raw data
 			if entry.Raw != nil {
 				if cc, ok := entry.Raw["cache_creation_input_tokens"].(int); ok {
@@ -146,12 +169,24 @@ func (c *Calculator) GenerateSessionReport(entries []types.UsageEntry) []types.S
 				}
 			}
 		}
-		
+
 		// Convert model set to sorted slice
 		for model := range modelSet {
 			session.ModelsUsed = append(session.ModelsUsed, model)
 		}
 		sort.Strings(session.ModelsUsed)
+
+		// Convert session ID set to sorted slice
+		for sid := range sessionIDSet {
+			session.SessionIDs = append(session.SessionIDs, sid)
+		}
+		sort.Strings(session.SessionIDs)
+
+		// Convert source file set to sorted slice
+		for sf := range sourceFileSet {
+			session.SourceFiles = append(session.SourceFiles, sf)
+		}
+		sort.Strings(session.SourceFiles)
 
 		sessions = append(sessions, session)
 	}
@@ -161,6 +196,72 @@ func (c *Calculator) GenerateSessionReport(entries []types.UsageEntry) []types.S
 	})
 
 	return sessions
+}
+
+func (c *Calculator) AggregateBySourceFile(entries []types.UsageEntry) []types.SourceFileStat {
+	fileMap := make(map[string]*types.SourceFileStat)
+
+	for _, entry := range entries {
+		if entry.SourceFile == "" {
+			continue
+		}
+
+		stat, exists := fileMap[entry.SourceFile]
+		if !exists {
+			stat = &types.SourceFileStat{FilePath: entry.SourceFile}
+			fileMap[entry.SourceFile] = stat
+		}
+
+		stat.InputTokens += entry.InputTokens
+		stat.OutputTokens += entry.OutputTokens
+		stat.Cost += entry.Cost
+		stat.APICost += entry.APICost
+		stat.CacheCreateCost += entry.CacheCreateCost
+		stat.CacheReadCost += entry.CacheReadCost
+		stat.EntryCount++
+
+		// Cache tokens from Raw
+		if entry.Raw != nil {
+			if cc, ok := entry.Raw["cache_creation_input_tokens"].(int); ok {
+				stat.CacheCreateTokens += cc
+			}
+			if cr, ok := entry.Raw["cache_read_input_tokens"].(int); ok {
+				stat.CacheReadTokens += cr
+			}
+		}
+
+		// Total tokens
+		stat.TotalTokens = stat.InputTokens + stat.OutputTokens + stat.CacheCreateTokens + stat.CacheReadTokens
+
+		// Track models
+		if entry.Model != "" && entry.Model != "<synthetic>" {
+			found := false
+			for _, m := range stat.ModelsUsed {
+				if m == entry.Model {
+					found = true
+					break
+				}
+			}
+			if !found {
+				stat.ModelsUsed = append(stat.ModelsUsed, entry.Model)
+			}
+		}
+
+		// Track last activity
+		if entry.Timestamp.After(stat.LastActivity) {
+			stat.LastActivity = entry.Timestamp
+		}
+	}
+
+	var stats []types.SourceFileStat
+	for _, stat := range fileMap {
+		sort.Strings(stat.ModelsUsed)
+		stats = append(stats, *stat)
+	}
+	sort.Slice(stats, func(i, j int) bool {
+		return stats[i].FilePath < stats[j].FilePath
+	})
+	return stats
 }
 
 func (c *Calculator) GenerateBlocksReport(entries []types.UsageEntry) []types.BlockInfo {

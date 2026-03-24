@@ -105,16 +105,19 @@ func (c *Calculator) createBlock(startTime time.Time, entries []types.UsageEntry
 		isActive = timeSinceLastActivity < sessionDuration && now.Before(endTime)
 	}
 
-	// Aggregate token counts
+	// Aggregate token counts and costs
 	tokenCounts := types.TokenCounts{}
 	costUSD := 0.0
+	apiCostUSD := 0.0
+	cacheCreateCostUSD := 0.0
+	cacheReadCostUSD := 0.0
 	modelMap := make(map[string]bool)
 	var usageLimitResetTime *time.Time
 
 	for _, entry := range entries {
 		tokenCounts.InputTokens += entry.InputTokens
 		tokenCounts.OutputTokens += entry.OutputTokens
-		
+
 		// Extract cache tokens from Raw data if available
 		if entry.Raw != nil {
 			if cc, ok := entry.Raw["cache_creation_input_tokens"].(int); ok {
@@ -130,8 +133,11 @@ func (c *Calculator) createBlock(startTime time.Time, entries []types.UsageEntry
 				}
 			}
 		}
-		
+
 		costUSD += entry.Cost
+		apiCostUSD += entry.APICost
+		cacheCreateCostUSD += entry.CacheCreateCost
+		cacheReadCostUSD += entry.CacheReadCost
 		if entry.Model != "" {
 			modelMap[entry.Model] = true
 		}
@@ -154,6 +160,9 @@ func (c *Calculator) createBlock(startTime time.Time, entries []types.UsageEntry
 		Entries:             entries,
 		TokenCounts:         tokenCounts,
 		CostUSD:             costUSD,
+		APICostUSD:           apiCostUSD,
+		CacheCreateCostUSD:   cacheCreateCostUSD,
+		CacheReadCostUSD:     cacheReadCostUSD,
 		Models:              models,
 		UsageLimitResetTime: usageLimitResetTime,
 	}

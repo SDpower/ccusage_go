@@ -156,6 +156,7 @@ type UsageEntry struct {
     SessionID      string    `json:"session_id"`
     RequestID      string    `json:"request_id"`
     ProjectPath    string    `json:"project_path"`
+    SourceFile     string    `json:"source_file"` // v0.12.0: 來源 JSONL 檔案路徑
 }
 
 func (p *JSONLParser) Parse(data io.Reader) ([]UsageEntry, error) {
@@ -183,6 +184,23 @@ func (p *JSONLParser) Parse(data io.Reader) ([]UsageEntry, error) {
     
     return entries, nil
 }
+```
+
+### 3.3.1 Session 名稱解析與來源檔案追蹤 (v0.12.0)
+
+JSONL 解析時會攔截 `custom-title` 和 `agent-name` 類型的條目，用於建立 session 名稱對照表。
+
+**解析流程：**
+1. 解析每個 JSONL 檔案時，攔截 `custom-title` 和 `agent-name` 條目，建立單一檔案的 `sessionNameMap`
+2. 每筆 `UsageEntry` 會設定 `SourceFile` 欄位，記錄其來源 JSONL 檔案路徑
+3. 在 `LoadParallelWithOptions` 階段，各檔案的 `sessionNameMap` 會合併為全域的名稱對照表
+4. Session 名稱會在全域範圍內回填（backfill），確保子代理（subagent）檔案也能取得對應的 session 名稱
+
+**sessionNameMap 結構：**
+```go
+// sessionNameMap: sessionID -> sessionName
+// 從 JSONL 中的 custom-title 和 agent-name 條目建立
+type sessionNameMap map[string]string
 ```
 
 ### 3.4 數據驗證器 (Validator)

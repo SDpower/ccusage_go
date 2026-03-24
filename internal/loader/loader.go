@@ -166,8 +166,9 @@ func (l *Loader) LoadParallel(ctx context.Context, paths []string) ([]types.Usag
 
 func (l *Loader) LoadParallelWithOptions(ctx context.Context, paths []string, options *LoaderOptions) ([]types.UsageEntry, error) {
 	type result struct {
-		entries []types.UsageEntry
-		err     error
+		entries      []types.UsageEntry
+		sessionNames map[string]string
+		err          error
 	}
 
 	jobs := make(chan string, len(paths))
@@ -193,8 +194,8 @@ func (l *Loader) LoadParallelWithOptions(ctx context.Context, paths []string, op
 				case <-ctx.Done():
 					return
 				default:
-					entries, err := l.loadFileWithGlobalDedupe(path, &dedupeMutex, globalDedupeMap)
-					
+					entries, sessionNames, err := l.loadFileWithGlobalDedupe(path, &dedupeMutex, globalDedupeMap)
+
 					// Stream processing: calculate costs immediately if enabled
 					if options != nil && options.StreamProcessing && options.Calculator != nil && err == nil {
 						for i := range entries {
@@ -220,8 +221,8 @@ func (l *Loader) LoadParallelWithOptions(ctx context.Context, paths []string, op
 							}
 						}
 					}
-					
-					results <- result{entries: entries, err: err}
+
+					results <- result{entries: entries, sessionNames: sessionNames, err: err}
 				}
 			}
 		}()
@@ -246,12 +247,19 @@ func (l *Loader) LoadParallelWithOptions(ctx context.Context, paths []string, op
 
 	var allEntries []types.UsageEntry
 	var errors []error
+	globalSessionNames := make(map[string]string)
 
 	for res := range results {
 		if res.err != nil {
 			errors = append(errors, res.err)
 		} else {
 			allEntries = append(allEntries, res.entries...)
+			// Merge per-file session name maps (custom-title takes priority)
+			for sid, name := range res.sessionNames {
+				if _, exists := globalSessionNames[sid]; !exists {
+					globalSessionNames[sid] = name
+				}
+			}
 		}
 	}
 
@@ -259,16 +267,23 @@ func (l *Loader) LoadParallelWithOptions(ctx context.Context, paths []string, op
 		return nil, fmt.Errorf("failed to load any files: %v", errors[0])
 	}
 
+	// Global backfill: apply session names across all entries
+	for i := range allEntries {
+		if name, ok := globalSessionNames[allEntries[i].SessionID]; ok {
+			allEntries[i].SessionName = name
+		}
+	}
+
 	return allEntries, nil
 }
 
-func (l *Loader) loadFile(path string) ([]types.UsageEntry, error) {
+func (l *Loader) loadFile(path string) ([]types.UsageEntry, map[string]string, error) {
 	// Legacy function - redirect to new version with local dedupe
 	dedupeMap := make(map[string]bool)
 	return l.loadFileWithDedupe(path, dedupeMap)
 }
 
-func (l *Loader) loadFileWithGlobalDedupe(path string, dedupeMutex *sync.Mutex, globalDedupeMap map[string]bool) ([]types.UsageEntry, error) {
+func (l *Loader) loadFileWithGlobalDedupe(path string, dedupeMutex *sync.Mutex, globalDedupeMap map[string]bool) ([]types.UsageEntry, map[string]string, error) {
 	return l.loadFileWithDedupe(path, globalDedupeMap, dedupeMutex)
 }
 
@@ -279,10 +294,10 @@ func clearRawData(entries []types.UsageEntry) {
 	}
 }
 
-func (l *Loader) loadFileWithDedupe(path string, dedupeMap map[string]bool, dedupeMutex ...*sync.Mutex) ([]types.UsageEntry, error) {
+func (l *Loader) loadFileWithDedupe(path string, dedupeMap map[string]bool, dedupeMutex ...*sync.Mutex) ([]types.UsageEntry, map[string]string, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, types.LoaderError{Path: path, Err: err}
+		return nil, nil, types.LoaderError{Path: path, Err: err}
 	}
 	defer file.Close()
 
@@ -300,6 +315,7 @@ func (l *Loader) loadFileWithDedupe(path string, dedupeMap map[string]bool, dedu
 	lineNum := 0
 	parseErrors := 0
 	firstError := ""
+	sessionNameMap := make(map[string]string)
 
 	for scanner.Scan() {
 		lineNum++
@@ -317,8 +333,31 @@ func (l *Loader) loadFileWithDedupe(path string, dedupeMap map[string]bool, dedu
 			continue // Skip malformed JSON lines
 		}
 
+		// Intercept custom-title and agent-name entries for session name mapping
+		if typeStr, ok := raw["type"].(string); ok {
+			if typeStr == "custom-title" {
+				if title, ok := raw["customTitle"].(string); ok {
+					if sid, ok := raw["sessionId"].(string); ok {
+						sessionNameMap[sid] = title
+					}
+				}
+				continue
+			}
+			if typeStr == "agent-name" {
+				if name, ok := raw["agentName"].(string); ok {
+					if sid, ok := raw["sessionId"].(string); ok {
+						if _, exists := sessionNameMap[sid]; !exists {
+							sessionNameMap[sid] = name
+						}
+					}
+				}
+				continue
+			}
+		}
+
 		// Try to parse entry according to TypeScript schema rules
 		entry, err := l.parseEntry(raw, projectPath)
+		entry.SourceFile = path
 		if err != nil {
 			// TypeScript version would skip this line silently
 			// Only count as parse error if it's an actual JSON structure we expect to handle
@@ -390,10 +429,10 @@ func (l *Loader) loadFileWithDedupe(path string, dedupeMap map[string]bool, dedu
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, types.LoaderError{Path: path, Err: err}
+		return nil, nil, types.LoaderError{Path: path, Err: err}
 	}
 
-	return entries, nil
+	return entries, sessionNameMap, nil
 }
 
 func (l *Loader) parseEntry(raw map[string]interface{}, filePath string) (types.UsageEntry, error) {

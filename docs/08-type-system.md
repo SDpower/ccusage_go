@@ -211,12 +211,15 @@ type UsageEntry struct {
     OutputTokens       int          `json:"output_tokens"`
     CacheCreationTokens int         `json:"cache_creation_tokens"`
     CacheReadTokens    int          `json:"cache_read_tokens"`
+    CacheCreateCost    *float64     `json:"cache_create_cost,omitempty"` // v0.12.0: Cache Create 費用（nil 表示無資料）
+    CacheReadCost      *float64     `json:"cache_read_cost,omitempty"`   // v0.12.0: Cache Read 費用（nil 表示無資料）
     Cost               float64      `json:"cost"`
     SessionID          SessionID    `json:"session_id"`
     RequestID          RequestID    `json:"request_id"`
     MessageID          MessageID    `json:"message_id,omitempty"`
     ProjectPath        ProjectPath  `json:"project_path,omitempty"`
     Version            Version      `json:"version,omitempty"`
+    SourceFile         string       `json:"source_file,omitempty"` // v0.12.0: 來源 JSONL 檔案路徑
 }
 
 func (u *UsageEntry) Validate() error {
@@ -287,15 +290,35 @@ type MonthlyUsage struct {
 
 type SessionUsage struct {
     SessionID       SessionID       `json:"session_id"`
+    SessionName     string          `json:"session_name"`
+    SessionIDs      []string        `json:"session_ids"`
+    SourceFiles     []string        `json:"source_files"`
     StartTime       time.Time      `json:"start_time"`
     EndTime         time.Time      `json:"end_time"`
     Duration        time.Duration  `json:"duration"`
     InputTokens     int           `json:"input_tokens"`
     OutputTokens    int           `json:"output_tokens"`
+    CacheCreateCost *float64      `json:"cache_create_cost,omitempty"` // v0.12.0: Cache Create 費用
+    CacheReadCost   *float64      `json:"cache_read_cost,omitempty"`   // v0.12.0: Cache Read 費用
     TotalCost       float64       `json:"total_cost"`
     ModelsUsed      []ModelName   `json:"models_used"`
     RequestCount    int           `json:"request_count"`
     Project         *ProjectPath   `json:"project,omitempty"`
+}
+
+// SourceFileStat 表示單一來源檔案在 session 內的用量統計
+type SourceFileStat struct {
+    SourceFile      string        `json:"source_file"`
+    Models          []string      `json:"models"`
+    InputTokens     int           `json:"input_tokens"`
+    OutputTokens    int           `json:"output_tokens"`
+    CacheTokens     int           `json:"cache_creation_tokens"`
+    CacheReadTokens int           `json:"cache_read_tokens"`
+    CacheCreateCost *float64      `json:"cache_create_cost,omitempty"` // v0.12.0: Cache Create 費用
+    CacheReadCost   *float64      `json:"cache_read_cost,omitempty"`   // v0.12.0: Cache Read 費用
+    TotalTokens     int           `json:"total_tokens"`
+    Cost            float64       `json:"cost"`
+    LastActivity    time.Time     `json:"last_activity"`
 }
 ```
 

@@ -97,15 +97,19 @@ func (f *TableWriterFormatter) FormatDailyReportWithFilter(entries []types.Usage
 	// Set headers with multi-line support
 	table.Header([]string{
 		"Date\n",
+		"Sessions\n",
 		"Models\n",
 		"Input\n",
 		"Output\n",
 		"Cache\nCreate",
+		"CC Cost\n(USD)",
 		"Cache\nRead",
+		"CR Cost\n(USD)",
 		"Total\nTokens",
+		"API Cost\n(USD)",
 		"Cost\n(USD)",
 	})
-	
+
 	// Sort dates
 	var dates []string
 	for date := range dailyGroups {
@@ -120,29 +124,40 @@ func (f *TableWriterFormatter) FormatDailyReportWithFilter(entries []types.Usage
 		dates = append(dates, date)
 	}
 	sort.Strings(dates)
-	
+
 	var totalInput, totalOutput, totalCache, totalCacheRead, totalTokens int
-	var totalCost float64
-	
+	var totalCost, totalAPICost, totalCCCost, totalCRCost float64
+	totalSessionSet := make(map[string]bool)
+
 	// Process each date
 	for _, date := range dates {
 		group := dailyGroups[date]
-		
+
 		// Calculate aggregates for this date
 		var input, outputTokens, cache, cacheRead, tokens int
-		var cost float64
+		var cost, apiCost, ccCost, crCost float64
 		models := make(map[string]bool)
-		
+		sessionSet := make(map[string]bool)
+
 		for _, entry := range group {
 			input += entry.InputTokens
 			outputTokens += entry.OutputTokens
 			cost += entry.Cost
-			
+			apiCost += entry.APICost
+			ccCost += entry.CacheCreateCost
+			crCost += entry.CacheReadCost
+
+			// Count unique sessions
+			if entry.SessionID != "" {
+				sessionSet[entry.SessionID] = true
+				totalSessionSet[entry.SessionID] = true
+			}
+
 			// Skip synthetic model in display (but still count its tokens/cost)
 			if entry.Model != "" && entry.Model != "<synthetic>" {
 				models[entry.Model] = true
 			}
-			
+
 			// Get cache values from Raw
 			if cc, ok := entry.Raw["cache_creation_input_tokens"].(int); ok {
 				cache += cc
@@ -151,17 +166,20 @@ func (f *TableWriterFormatter) FormatDailyReportWithFilter(entries []types.Usage
 				cacheRead += cr
 			}
 		}
-		
+
 		// Calculate total tokens including cache (matches TypeScript's getTotalTokens)
 		tokens = input + outputTokens + cache + cacheRead
-		
+
 		totalInput += input
 		totalOutput += outputTokens
 		totalCache += cache
 		totalCacheRead += cacheRead
 		totalTokens += tokens
+		totalAPICost += apiCost
+		totalCCCost += ccCost
+		totalCRCost += crCost
 		totalCost += cost
-		
+
 		// Format models list
 		var modelList []string
 		for model := range models {
@@ -169,14 +187,14 @@ func (f *TableWriterFormatter) FormatDailyReportWithFilter(entries []types.Usage
 			modelList = append(modelList, shortModel)
 		}
 		sort.Strings(modelList)
-		
+
 		// Format date as YYYY\nMM-DD
 		dateParts := strings.Split(date, "-")
 		formattedDate := date
 		if len(dateParts) == 3 {
 			formattedDate = fmt.Sprintf("%s\n%s-%s", dateParts[0], dateParts[1], dateParts[2])
 		}
-		
+
 		// Format models with bullet points on separate lines
 		modelsStr := ""
 		if len(modelList) > 0 {
@@ -189,35 +207,43 @@ func (f *TableWriterFormatter) FormatDailyReportWithFilter(entries []types.Usage
 		} else {
 			modelsStr = "-"
 		}
-		
+
 		// Add row to table
 		table.Append([]string{
 			formattedDate,
+			fmt.Sprintf("%d", len(sessionSet)),
 			modelsStr,
 			f.formatLargeNumber(input),
 			f.formatLargeNumber(outputTokens),
 			f.formatLargeNumber(cache),
+			f.formatCostOrDash(ccCost),
 			f.formatLargeNumber(cacheRead),
+			f.formatCostOrDash(crCost),
 			f.formatLargeNumber(tokens),
+			fmt.Sprintf("$%.2f", apiCost),
 			fmt.Sprintf("$%.2f", cost),
 		})
 	}
-	
+
 	// Set footer
 	table.Footer([]string{
 		"Total",
+		fmt.Sprintf("%d", len(totalSessionSet)),
 		"",
 		f.formatLargeNumber(totalInput),
 		f.formatLargeNumber(totalOutput),
 		f.formatLargeNumber(totalCache),
+		f.formatCostOrDash(totalCCCost),
 		f.formatLargeNumber(totalCacheRead),
+		f.formatCostOrDash(totalCRCost),
 		f.formatLargeNumber(totalTokens),
+		fmt.Sprintf("$%.2f", totalAPICost),
 		fmt.Sprintf("$%.2f", totalCost),
 	})
-	
+
 	// Render table
 	table.Render()
-	
+
 	// Apply color styling if enabled
 	tableOutput := buf.String()
 	if !f.noColor {
@@ -226,16 +252,16 @@ func (f *TableWriterFormatter) FormatDailyReportWithFilter(entries []types.Usage
 		cyan := "\033[36m"     // Cyan color for headers
 		yellow := "\033[33m"   // Yellow color for Total row
 		reset := "\033[0m"     // Reset color
-		
+
 		lines := strings.Split(tableOutput, "\n")
 		var coloredOutput strings.Builder
-		
+
 		for i, line := range lines {
 			if line == "" {
 				coloredOutput.WriteString("\n")
 				continue
 			}
-			
+
 			// Check if this is a pure border line (no data)
 			if strings.HasPrefix(line, "┌") || strings.HasPrefix(line, "├") || strings.HasPrefix(line, "└") {
 				// Pure border line - all gray
@@ -247,7 +273,7 @@ func (f *TableWriterFormatter) FormatDailyReportWithFilter(entries []types.Usage
 					if j > 0 {
 						coloredOutput.WriteString(gray + "│" + reset)
 					}
-					
+
 					// Check content type
 					if i <= 2 && strings.TrimSpace(part) != "" {
 						// Header rows - use cyan
@@ -264,17 +290,17 @@ func (f *TableWriterFormatter) FormatDailyReportWithFilter(entries []types.Usage
 				// Other lines
 				coloredOutput.WriteString(line)
 			}
-			
+
 			if i < len(lines)-1 {
 				coloredOutput.WriteString("\n")
 			}
 		}
-		
+
 		output.WriteString(coloredOutput.String())
 	} else {
 		output.WriteString(tableOutput)
 	}
-	
+
 	return output.String()
 }
 
@@ -338,15 +364,19 @@ func (f *TableWriterFormatter) FormatMonthlyReportWithFilter(entries []types.Usa
 	// Set headers with multi-line support
 	table.Header([]string{
 		"Month\n",
+		"Sessions\n",
 		"Models\n",
 		"Input\n",
 		"Output\n",
 		"Cache\nCreate",
+		"CC Cost\n(USD)",
 		"Cache\nRead",
+		"CR Cost\n(USD)",
 		"Total\nTokens",
+		"API Cost\n(USD)",
 		"Cost\n(USD)",
 	})
-	
+
 	// Sort months
 	var months []string
 	for month := range monthlyGroups {
@@ -360,25 +390,36 @@ func (f *TableWriterFormatter) FormatMonthlyReportWithFilter(entries []types.Usa
 		months = append(months, month)
 	}
 	sort.Strings(months)
-	
+
 	var totalInput, totalOutput, totalCache, totalCacheRead, totalTokens int
-	var totalCost float64
-	
+	var totalCost, totalAPICost, totalCCCost, totalCRCost float64
+	totalSessionSet := make(map[string]bool)
+
 	// Process each month
 	for _, month := range months {
 		monthEntries := monthlyGroups[month]
-		
+
 		// Aggregate data for this month
 		var monthInput, monthOutput, monthCache, monthCacheRead, monthTotalTokens int
-		var monthCost float64
+		var monthCost, monthAPICost, monthCCCost, monthCRCost float64
 		modelMap := make(map[string]bool)
-		
+		sessionSet := make(map[string]bool)
+
 		for _, entry := range monthEntries {
 			monthInput += entry.InputTokens
 			monthOutput += entry.OutputTokens
 			monthCost += entry.Cost
+			monthAPICost += entry.APICost
+			monthCCCost += entry.CacheCreateCost
+			monthCRCost += entry.CacheReadCost
 			monthTotalTokens += entry.TotalTokens
-			
+
+			// Count unique sessions
+			if entry.SessionID != "" {
+				sessionSet[entry.SessionID] = true
+				totalSessionSet[entry.SessionID] = true
+			}
+
 			// Track cache tokens from Raw data
 			if entry.Raw != nil {
 				if cc, ok := entry.Raw["cache_creation_input_tokens"].(int); ok {
@@ -388,27 +429,27 @@ func (f *TableWriterFormatter) FormatMonthlyReportWithFilter(entries []types.Usa
 					monthCacheRead += cr
 				}
 			}
-			
+
 			// Skip synthetic model in display (but still count its tokens/cost)
 			if entry.Model != "" && entry.Model != "<synthetic>" {
 				modelMap[entry.Model] = true
 			}
 		}
-		
+
 		// Format models list (same logic as daily format)
 		simplifiedModels := make(map[string]bool)
 		for model := range modelMap {
 			shortModel := ShortenModelName(model)
 			simplifiedModels[shortModel] = true
 		}
-		
+
 		var models []string
 		for model := range simplifiedModels {
 			models = append(models, model)
 		}
 		sort.Strings(models)
 		modelsStr := "- " + strings.Join(models, "\n- ")
-		
+
 		// Add totals
 		totalInput += monthInput
 		totalOutput += monthOutput
@@ -416,39 +457,50 @@ func (f *TableWriterFormatter) FormatMonthlyReportWithFilter(entries []types.Usa
 		totalCacheRead += monthCacheRead
 		totalTokens += monthTotalTokens
 		totalCost += monthCost
-		
+		totalAPICost += monthAPICost
+		totalCCCost += monthCCCost
+		totalCRCost += monthCRCost
+
 		// Format month as YYYY-MM (keep original format for monthly)
 		formattedMonth := month
-		
+
 		// Add row
 		table.Append([]string{
 			formattedMonth,
+			fmt.Sprintf("%d", len(sessionSet)),
 			modelsStr,
 			f.formatLargeNumber(monthInput),
 			f.formatLargeNumber(monthOutput),
 			f.formatLargeNumber(monthCache),
+			f.formatCostOrDash(monthCCCost),
 			f.formatLargeNumber(monthCacheRead),
+			f.formatCostOrDash(monthCRCost),
 			f.formatLargeNumber(monthTotalTokens),
+			fmt.Sprintf("$%.2f", monthAPICost),
 			fmt.Sprintf("$%.2f", monthCost),
 		})
 	}
-	
+
 	// Set footer
 	table.Footer([]string{
 		"Total",
+		fmt.Sprintf("%d", len(totalSessionSet)),
 		"",
 		f.formatLargeNumber(totalInput),
 		f.formatLargeNumber(totalOutput),
 		f.formatLargeNumber(totalCache),
+		f.formatCostOrDash(totalCCCost),
 		f.formatLargeNumber(totalCacheRead),
+		f.formatCostOrDash(totalCRCost),
 		f.formatLargeNumber(totalTokens),
+		fmt.Sprintf("$%.2f", totalAPICost),
 		fmt.Sprintf("$%.2f", totalCost),
 	})
-	
+
 	// Render table
 	table.Render()
 	tableOutput := buf.String()
-	
+
 	// Apply color styling if enabled (same as daily format)
 	if !f.noColor {
 		// Apply colors to table elements
@@ -629,6 +681,13 @@ func ShortenModelName(model string) string {
 	return model
 }
 
+func (f *TableWriterFormatter) formatCostOrDash(cost float64) string {
+	if cost == 0 {
+		return "-"
+	}
+	return fmt.Sprintf("$%.2f", cost)
+}
+
 func (f *TableWriterFormatter) formatLargeNumber(n int) string {
 	if n == 0 {
 		return "-"
@@ -649,6 +708,235 @@ func (f *TableWriterFormatter) formatLargeNumber(n int) string {
 	}
 	
 	return string(result)
+}
+
+func (f *TableWriterFormatter) FormatSessionDetailReport(sessions []types.SessionInfo, fileStats []types.SourceFileStat) string {
+	if len(sessions) == 0 {
+		return f.formatEmptySessionReport()
+	}
+
+	var output strings.Builder
+
+	// Title
+	output.WriteString(" ╭──────────────────────────────────────────────────────────╮\n")
+	output.WriteString(" │                                                          │\n")
+	output.WriteString(" │  Claude Code Token Usage Report - By Session (WITH GO)  │\n")
+	output.WriteString(" │                                                          │\n")
+	output.WriteString(" ╰──────────────────────────────────────────────────────────╯\n\n")
+
+	var buf bytes.Buffer
+
+	table := tablewriter.NewTable(&buf,
+		tablewriter.WithRenderer(renderer.NewBlueprint(tw.Rendition{
+			Settings: tw.Settings{Separators: tw.Separators{BetweenRows: tw.On}},
+		})),
+		tablewriter.WithConfig(tablewriter.Config{
+			Row: tw.CellConfig{
+				Alignment: tw.CellAlignment{Global: tw.AlignRight},
+			},
+		}),
+		tablewriter.WithHeaderAutoFormat(tw.Off),
+	)
+
+	table.Header([]string{
+		"Session\n",
+		"Source\nFile",
+		"Models\n",
+		"Input\n",
+		"Output\n",
+		"Cache\nCreate",
+		"CC Cost\n(USD)",
+		"Cache\nRead",
+		"CR Cost\n(USD)",
+		"Total\nTokens",
+		"API Cost\n(USD)",
+		"Cost\n(USD)",
+		"Last Activity\n(localtime)",
+	})
+
+	var totalInput, totalOutput, totalCache, totalCacheRead, totalTokens int
+	var totalCost, totalAPICost, totalCCCost, totalCRCost float64
+	totalFileSet := make(map[string]bool)
+
+	for _, session := range sessions {
+		// Build session display (multiline: name + UUID)
+		var sessionLines []string
+		if session.SessionName != "" {
+			sessionLines = append(sessionLines, session.SessionName)
+		} else {
+			sessionLines = append(sessionLines, f.extractSessionDisplayName(session.SessionID, session.ProjectPath))
+		}
+		for _, sid := range session.SessionIDs {
+			sessionLines = append(sessionLines, "("+sid+")")
+		}
+
+		// Find file stats for this session's source files
+		sessionFileStats := make([]types.SourceFileStat, 0)
+		sessionFileSet := make(map[string]bool)
+		for _, sf := range session.SourceFiles {
+			sessionFileSet[sf] = true
+		}
+		for _, fs := range fileStats {
+			if sessionFileSet[fs.FilePath] {
+				sessionFileStats = append(sessionFileStats, fs)
+				totalFileSet[fs.FilePath] = true
+			}
+		}
+
+		// If no file stats matched, use all file stats (fallback)
+		if len(sessionFileStats) == 0 {
+			sessionFileStats = fileStats
+			for _, fs := range fileStats {
+				totalFileSet[fs.FilePath] = true
+			}
+		}
+
+		// Build multiline cells: each line = one source file
+		var fileLines, modelLines, inputLines, outputLines []string
+		var cacheCreateLines, ccCostLines, cacheReadLines, crCostLines, totalTokenLines, apiCostLines, costLines, activityLines []string
+
+		for _, fs := range sessionFileStats {
+			// Extract short file name from path
+			fileLines = append(fileLines, extractShortFilePath(fs.FilePath))
+
+			// Models for this file
+			shortModels := make([]string, 0)
+			for _, m := range fs.ModelsUsed {
+				shortModels = append(shortModels, ShortenModelName(m))
+			}
+			if len(shortModels) > 0 {
+				modelLines = append(modelLines, "- "+strings.Join(shortModels, "\n- "))
+			} else {
+				modelLines = append(modelLines, "")
+			}
+
+			inputLines = append(inputLines, f.formatLargeNumber(fs.InputTokens))
+			outputLines = append(outputLines, f.formatLargeNumber(fs.OutputTokens))
+			cacheCreateLines = append(cacheCreateLines, f.formatLargeNumber(fs.CacheCreateTokens))
+			ccCostLines = append(ccCostLines, f.formatCostOrDash(fs.CacheCreateCost))
+			cacheReadLines = append(cacheReadLines, f.formatLargeNumber(fs.CacheReadTokens))
+			crCostLines = append(crCostLines, f.formatCostOrDash(fs.CacheReadCost))
+			totalTokenLines = append(totalTokenLines, f.formatLargeNumber(fs.TotalTokens))
+			apiCostLines = append(apiCostLines, fmt.Sprintf("$%.2f", fs.APICost))
+			costLines = append(costLines, fmt.Sprintf("$%.2f", fs.Cost))
+			activityLines = append(activityLines, fs.LastActivity.In(f.timezone).Format("2006-01-02 15:04"))
+
+			totalInput += fs.InputTokens
+			totalOutput += fs.OutputTokens
+			totalCache += fs.CacheCreateTokens
+			totalCacheRead += fs.CacheReadTokens
+			totalTokens += fs.TotalTokens
+			totalAPICost += fs.APICost
+			totalCCCost += fs.CacheCreateCost
+			totalCRCost += fs.CacheReadCost
+			totalCost += fs.Cost
+		}
+
+		// Pad session lines to match file count
+		for len(sessionLines) < len(fileLines) {
+			sessionLines = append(sessionLines, "")
+		}
+
+		table.Append([]string{
+			strings.Join(sessionLines, "\n"),
+			strings.Join(fileLines, "\n"),
+			strings.Join(modelLines, "\n"),
+			strings.Join(inputLines, "\n"),
+			strings.Join(outputLines, "\n"),
+			strings.Join(cacheCreateLines, "\n"),
+			strings.Join(ccCostLines, "\n"),
+			strings.Join(cacheReadLines, "\n"),
+			strings.Join(crCostLines, "\n"),
+			strings.Join(totalTokenLines, "\n"),
+			strings.Join(apiCostLines, "\n"),
+			strings.Join(costLines, "\n"),
+			strings.Join(activityLines, "\n"),
+		})
+	}
+
+	table.Footer([]string{
+		"Total",
+		fmt.Sprintf("%d", len(totalFileSet)),
+		"",
+		f.formatLargeNumber(totalInput),
+		f.formatLargeNumber(totalOutput),
+		f.formatLargeNumber(totalCache),
+		f.formatCostOrDash(totalCCCost),
+		f.formatLargeNumber(totalCacheRead),
+		f.formatCostOrDash(totalCRCost),
+		f.formatLargeNumber(totalTokens),
+		fmt.Sprintf("$%.2f", totalAPICost),
+		fmt.Sprintf("$%.2f", totalCost),
+		"",
+	})
+
+	table.Render()
+
+	tableOutput := buf.String()
+	if !f.noColor {
+		gray := "\033[90m"
+		cyan := "\033[36m"
+		yellow := "\033[33m"
+		reset := "\033[0m"
+
+		lines := strings.Split(tableOutput, "\n")
+		var coloredOutput strings.Builder
+
+		for i, line := range lines {
+			if line == "" {
+				coloredOutput.WriteString("\n")
+				continue
+			}
+
+			if strings.HasPrefix(line, "┌") || strings.HasPrefix(line, "├") || strings.HasPrefix(line, "└") {
+				coloredOutput.WriteString(gray + line + reset)
+			} else if strings.Contains(line, "│") {
+				parts := strings.Split(line, "│")
+				for j, part := range parts {
+					if j > 0 {
+						coloredOutput.WriteString(gray + "│" + reset)
+					}
+					if i <= 2 && strings.TrimSpace(part) != "" {
+						coloredOutput.WriteString(cyan + part + reset)
+					} else if strings.Contains(part, "Total") || (strings.Contains(line, "Total") && strings.TrimSpace(part) != "") {
+						coloredOutput.WriteString(yellow + part + reset)
+					} else {
+						coloredOutput.WriteString(part)
+					}
+				}
+			} else {
+				coloredOutput.WriteString(line)
+			}
+
+			if i < len(lines)-1 {
+				coloredOutput.WriteString("\n")
+			}
+		}
+
+		output.WriteString(coloredOutput.String())
+	} else {
+		output.WriteString(tableOutput)
+	}
+
+	return output.String()
+}
+
+// extractShortFilePath extracts a short display name from a JSONL file path
+func extractShortFilePath(filePath string) string {
+	parts := strings.Split(filePath, string(os.PathSeparator))
+
+	// Find "subagents" directory and show from there
+	for i, part := range parts {
+		if part == "subagents" && i+1 < len(parts) {
+			return "subagents/" + parts[i+1]
+		}
+	}
+
+	// Otherwise return just the filename
+	if len(parts) > 0 {
+		return parts[len(parts)-1]
+	}
+	return filePath
 }
 
 func (f *TableWriterFormatter) FormatSessionReport(sessions []types.SessionInfo) string {
@@ -688,40 +976,59 @@ func (f *TableWriterFormatter) FormatSessionReportWithFilter(sessions []types.Se
 	// Set headers with multi-line support
 	table.Header([]string{
 		"Session\n",
+		"Files\n",
 		"Models\n",
 		"Input\n",
 		"Output\n",
 		"Cache\nCreate",
+		"CC Cost\n(USD)",
 		"Cache\nRead",
+		"CR Cost\n(USD)",
 		"Total\nTokens",
+		"API Cost\n(USD)",
 		"Cost\n(USD)",
-		"Last\nActivity",
+		"Last Activity\n(localtime)",
 	})
-	
+
 	var totalInput, totalOutput, totalCache, totalCacheRead, totalTokens int
-	var totalCost float64
-	
+	var totalCost, totalAPICost, totalCCCost, totalCRCost float64
+	totalFileSet := make(map[string]bool)
+
 	// Process each session
 	for _, session := range sessions {
 		// Apply date filter if specified
-		lastActivity := session.LastActivity.Format("2006-01-02")
+		lastActivity := session.LastActivity.In(f.timezone).Format("2006-01-02 15:04")
 		if since != "" && lastActivity < since {
 			continue
 		}
 		if until != "" && lastActivity > until {
 			continue
 		}
-		
-		// Extract project name from session ID or project path
-		sessionDisplay := f.extractSessionDisplayName(session.SessionID, session.ProjectPath)
-		
+
+		// Display session name if available, otherwise extract from project path
+		var sessionDisplay string
+		if session.SessionName != "" {
+			sessionDisplay = session.SessionName
+		} else {
+			sessionDisplay = f.extractSessionDisplayName(session.SessionID, session.ProjectPath)
+		}
+		// Append session IDs on separate lines
+		for _, sid := range session.SessionIDs {
+			sessionDisplay += "\n(" + sid + ")"
+		}
+
+		// Track total unique files
+		for _, sf := range session.SourceFiles {
+			totalFileSet[sf] = true
+		}
+
 		// Format models list (same logic as daily format)
 		simplifiedModels := make(map[string]bool)
 		for _, model := range session.ModelsUsed {
 			shortModel := ShortenModelName(model)
 			simplifiedModels[shortModel] = true
 		}
-		
+
 		var models []string
 		for model := range simplifiedModels {
 			models = append(models, model)
@@ -731,44 +1038,55 @@ func (f *TableWriterFormatter) FormatSessionReportWithFilter(sessions []types.Se
 		if len(models) == 0 {
 			modelsStr = "-"
 		}
-		
+
 		totalInput += session.InputTokens
 		totalOutput += session.OutputTokens
 		totalCache += session.CacheCreationTokens
 		totalCacheRead += session.CacheReadTokens
 		totalTokens += session.TotalTokens
 		totalCost += session.TotalCost
-		
+		totalAPICost += session.TotalAPICost
+		totalCCCost += session.CacheCreateCost
+		totalCRCost += session.CacheReadCost
+
 		// Add row to table
 		table.Append([]string{
 			sessionDisplay,
+			fmt.Sprintf("%d", len(session.SourceFiles)),
 			modelsStr,
 			f.formatLargeNumber(session.InputTokens),
 			f.formatLargeNumber(session.OutputTokens),
 			f.formatLargeNumber(session.CacheCreationTokens),
+			f.formatCostOrDash(session.CacheCreateCost),
 			f.formatLargeNumber(session.CacheReadTokens),
+			f.formatCostOrDash(session.CacheReadCost),
 			f.formatLargeNumber(session.TotalTokens),
+			fmt.Sprintf("$%.2f", session.TotalAPICost),
 			fmt.Sprintf("$%.2f", session.TotalCost),
 			lastActivity,
 		})
 	}
-	
+
 	// Set footer
 	table.Footer([]string{
 		"Total",
+		fmt.Sprintf("%d", len(totalFileSet)),
 		"",
 		f.formatLargeNumber(totalInput),
 		f.formatLargeNumber(totalOutput),
 		f.formatLargeNumber(totalCache),
+		f.formatCostOrDash(totalCCCost),
 		f.formatLargeNumber(totalCacheRead),
+		f.formatCostOrDash(totalCRCost),
 		f.formatLargeNumber(totalTokens),
+		fmt.Sprintf("$%.2f", totalAPICost),
 		fmt.Sprintf("$%.2f", totalCost),
 		"",
 	})
-	
+
 	// Render table
 	table.Render()
-	
+
 	// Apply color styling if enabled
 	tableOutput := buf.String()
 	if !f.noColor {
@@ -1036,15 +1354,18 @@ func (f *TableWriterFormatter) FormatBlocksReport(blocks []types.SessionBlock, t
 		"Block Start",
 		"Duration/Status",
 		"Models",
-		"Tokens",
+		"Input",
+		"Output",
+		"Cache\nCreate",
+		"CC Cost\n(USD)",
+		"Cache\nRead",
+		"CR Cost\n(USD)",
+		"Total\nTokens",
 	}
-	
-	// Add % column if token limit is set
 	if tokenLimit > 0 {
 		headers = append(headers, "%")
 	}
-	
-	headers = append(headers, "Cost")
+	headers = append(headers, "API Cost\n(USD)", "Cost\n(USD)")
 	
 	table.Header(headers)
 	
@@ -1055,13 +1376,12 @@ func (f *TableWriterFormatter) FormatBlocksReport(blocks []types.SessionBlock, t
 			row := []string{
 				f.formatBlockTime(block, false),
 				"(inactive)",
-				"-",
-				"-",
+				"-", "-", "-", "-", "-", "-", "-", "-",
 			}
 			if tokenLimit > 0 {
 				row = append(row, "-")
 			}
-			row = append(row, "-")
+			row = append(row, "-", "-")
 			
 			// Add gray coloring in post-processing
 			table.Append(row)
@@ -1081,28 +1401,29 @@ func (f *TableWriterFormatter) FormatBlocksReport(blocks []types.SessionBlock, t
 			
 			// Format models
 			modelsStr := f.formatBlockModels(block.Models)
-			
-			// Format tokens
-			tokensStr := formatNumberWithCommas(totalTokens)
-			
+
+			// Format token breakdown
+			inputStr := f.formatLargeNumber(block.TokenCounts.InputTokens)
+			outputStr := f.formatLargeNumber(block.TokenCounts.OutputTokens)
+			cacheCreateStr := f.formatLargeNumber(block.TokenCounts.CacheCreationInputTokens)
+			cacheReadStr := f.formatLargeNumber(block.TokenCounts.CacheReadInputTokens)
+			totalTokensStr := formatNumberWithCommas(totalTokens)
+			ccCostStr := f.formatCostOrDash(block.CacheCreateCostUSD)
+			crCostStr := f.formatCostOrDash(block.CacheReadCostUSD)
+			apiCostStr := f.formatCostOrDash(block.APICostUSD)
+			costStr := fmt.Sprintf("$%.2f", block.CostUSD)
+
 			// Build row
-			row := []string{
-				timeStr,
-				statusStr,
-				modelsStr,
-				tokensStr,
-			}
-			
+			row := []string{timeStr, statusStr, modelsStr, inputStr, outputStr, cacheCreateStr, ccCostStr, cacheReadStr, crCostStr, totalTokensStr}
+
 			// Add percentage if token limit is set
 			if tokenLimit > 0 {
 				percentage := float64(totalTokens) / float64(tokenLimit) * 100
 				percentStr := fmt.Sprintf("%.1f%%", percentage)
 				row = append(row, percentStr)
 			}
-			
-			// Add cost
-			costStr := fmt.Sprintf("$%.2f", block.CostUSD)
-			row = append(row, costStr)
+
+			row = append(row, apiCostStr, costStr)
 			
 			table.Append(row)
 			
@@ -1121,10 +1442,10 @@ func (f *TableWriterFormatter) FormatBlocksReport(blocks []types.SessionBlock, t
 					remainingRow := []string{
 						fmt.Sprintf("(assuming %s token limit)", formatNumberWithCommas(tokenLimit)),
 						"REMAINING", // Will be colored blue
-						"",
+						"", "", "", "", "", "", "",
 						formatNumberWithCommas(remainingTokens),
 						fmt.Sprintf("%.1f%%", remainingPercent),
-						"",
+						"", "",
 					}
 					table.Append(remainingRow)
 				}
@@ -1134,16 +1455,16 @@ func (f *TableWriterFormatter) FormatBlocksReport(blocks []types.SessionBlock, t
 					projectedRow := []string{
 						"(assuming current burn rate)",
 						"PROJECTED", // Will be colored yellow
-						"",
+						"", "", "", "", "", "", "",
 						formatNumberWithCommas(projection.TotalTokens),
 					}
-					
+
 					if tokenLimit > 0 {
 						percentage := float64(projection.TotalTokens) / float64(tokenLimit) * 100
 						projectedRow = append(projectedRow, fmt.Sprintf("%.1f%%", percentage))
 					}
-					
-					projectedRow = append(projectedRow, fmt.Sprintf("$%.2f", projection.TotalCost))
+
+					projectedRow = append(projectedRow, "", fmt.Sprintf("$%.2f", projection.TotalCost))
 					table.Append(projectedRow)
 				}
 			}
@@ -1231,7 +1552,7 @@ func (f *TableWriterFormatter) FormatBlocksReport(blocks []types.SessionBlock, t
 						} else {
 							// Check if this is a token value that exceeds limit
 							trimmed := strings.TrimSpace(part)
-							if tokenLimit > 0 && j == 4 { // Tokens column
+							if tokenLimit > 0 && j == 10 { // Total Tokens column
 								// Try to parse the number
 								numStr := strings.ReplaceAll(trimmed, ",", "")
 								if num, err := strconv.Atoi(numStr); err == nil && num > tokenLimit {

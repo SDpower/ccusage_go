@@ -23,6 +23,9 @@ type SessionBlock struct {
 	Entries              []UsageEntry `json:"entries"`                  // Usage entries in this block
 	TokenCounts          TokenCounts `json:"token_counts"`             // Aggregated token counts
 	CostUSD              float64     `json:"cost_usd"`                 // Total cost in USD
+	APICostUSD           float64     `json:"api_cost_usd"`             // Input + output cost only
+	CacheCreateCostUSD   float64     `json:"cache_create_cost_usd"`    // Cache creation cost
+	CacheReadCostUSD     float64     `json:"cache_read_cost_usd"`      // Cache read cost
 	Models               []string    `json:"models"`                   // Unique models used
 	UsageLimitResetTime  *time.Time  `json:"usage_limit_reset_time,omitempty"` // Claude API usage limit reset time
 }

@@ -13,13 +13,15 @@ import (
 
 func NewSessionCommand() *cobra.Command {
 	var (
-		format     string
-		dataPath   string
-		noColor    bool
-		responsive bool
-		timezone   string
-		since      string
-		until      string
+		format      string
+		dataPath    string
+		noColor     bool
+		responsive  bool
+		timezone    string
+		since       string
+		until       string
+		sessionID   string
+		sessionName string
 	)
 
 	cmd := &cobra.Command{
@@ -63,6 +65,18 @@ func NewSessionCommand() *cobra.Command {
 				entries = filterEntriesByDate(entries, since, until)
 			}
 
+			// Apply session filters
+			if sessionID != "" {
+				entries = filterEntriesBySessionID(entries, sessionID)
+			}
+			if sessionName != "" {
+				entries = filterEntriesBySessionName(entries, sessionName)
+			}
+			if (sessionID != "" || sessionName != "") && len(entries) == 0 {
+				fmt.Println("No entries found for the specified session filter")
+				return nil
+			}
+
 			// Calculate costs
 			entries, err = calc.CalculateCosts(cmd.Context(), entries)
 			if err != nil {
@@ -72,13 +86,27 @@ func NewSessionCommand() *cobra.Command {
 			// Generate session report
 			sessions := calc.GenerateSessionReport(entries)
 
+			// Detail mode: show per-file breakdown when filtering by session
+			isFiltered := sessionID != "" || sessionName != ""
+			if isFiltered && format == "table" {
+				fileStats := calc.AggregateBySourceFile(entries)
+				tableFormatter := output.NewTableWriterFormatter(noColor)
+				if timezone != "" {
+					loc, _ := time.LoadLocation(timezone)
+					tableFormatter.SetTimezone(loc)
+				}
+				result := tableFormatter.FormatSessionDetailReport(sessions, fileStats)
+				fmt.Print(result)
+				return nil
+			}
+
 			// Format and output
-			output, err := formatter.FormatSessionReport(sessions)
+			result, err := formatter.FormatSessionReport(sessions)
 			if err != nil {
 				return fmt.Errorf("failed to format report: %w", err)
 			}
 
-			fmt.Print(output)
+			fmt.Print(result)
 			return nil
 		},
 	}
@@ -90,6 +118,8 @@ func NewSessionCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&timezone, "timezone", "z", "", "Timezone for date grouping")
 	cmd.Flags().StringVar(&since, "since", "", "Start date (YYYY-MM-DD)")
 	cmd.Flags().StringVar(&until, "until", "", "End date (YYYY-MM-DD)")
+	cmd.Flags().StringVar(&sessionID, "session-id", "", "Filter by session UUID")
+	cmd.Flags().StringVar(&sessionName, "session-name", "", "Filter by session name (exact match)")
 
 	return cmd
 }

@@ -287,6 +287,44 @@ func (m Model) convertDataToRows() []table.Row {
 }
 ```
 
+### 3.3.1 Session 明細報表格式化
+
+v0.12.0 新增 `FormatSessionDetailReport` 方法，用於格式化以 Session 為單位的明細報表。
+
+**報表結構：**
+當使用 `--session-id` 或 `--session-name` 過濾時，報表以 Session 為大區塊，逐行列出每個 Source File 的統計：
+
+```
+Session: my-feature (ca81db6e-cb9b-4b53-995b-f5d58b0e52f1)
+┌──────────────────────┬──────────┬─────────┬──────────┬───────────────┬───────────┬──────────────┬───────────┬──────────────┬───────────┬─────────┬─────────────────────┐
+│ Source File           │ Models   │ Input   │ Output   │ Cache Create  │ CC Cost   │ Cache Read   │ CR Cost   │ Total Tokens │ API Cost  │ Cost    │ Last Activity       │
+├──────────────────────┼──────────┼─────────┼──────────┼───────────────┼───────────┼──────────────┼───────────┼──────────────┼───────────┼─────────┼─────────────────────┤
+│ conversation_1.jsonl │ claude-… │ 12,345  │ 6,789    │ 1,000         │ $0.030    │ 500          │ $0.005    │ 20,634       │ $0.088    │ $0.123  │ 2025-01-15 14:30:00 │
+│ subagent_1.jsonl     │ claude-… │ 3,456   │ 1,234    │ 200           │ $0.006    │ 100          │ $0.001    │ 4,990        │ $0.038    │ $0.045  │ 2025-01-15 14:28:00 │
+└──────────────────────┴──────────┴─────────┴──────────┴───────────────┴───────────┴──────────────┴───────────┴──────────────┴───────────┴─────────┴─────────────────────┘
+```
+
+**Last Activity 格式：**
+Last Activity 欄位顯示日期加時間（本地時區），格式為 `YYYY-MM-DD HH:MM:SS`。
+
+### 3.3.2 CC Cost / CR Cost 欄位說明
+
+v0.12.0 起，所有報表（Daily、Monthly、Session、Session Detail）新增以下費用欄位：
+
+- **CC Cost (USD)**：Cache Create Cost，cache 建立的費用
+- **CR Cost (USD)**：Cache Read Cost，cache 讀取的費用
+- **API Cost (USD)**：僅含 input + output token 的費用（不含 cache 費用）
+- **Cost (USD)**：總費用 = API Cost + CC Cost + CR Cost
+
+**欄位順序：**
+`... | Cache Create | CC Cost (USD) | Cache Read | CR Cost (USD) | Total Tokens | API Cost (USD) | Cost (USD) | ...`
+
+**舊版資料處理：**
+當 JSONL 資料不含 cache 資訊時，CC Cost 和 CR Cost 欄位顯示 `-`。
+
+**CSV 輸出：**
+CSV 格式新增 `cache_create_cost` 和 `cache_read_cost` 欄位。
+
 ### 3.4 原始表格建構器（保留作為備選）
 
 ```go

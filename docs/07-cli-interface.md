@@ -244,6 +244,35 @@ func runDaily(ctx context.Context, opts DailyOptions) error {
 }
 ```
 
+### 4.2 Session 命令
+
+Session 命令支援查詢特定 session 的用量明細。
+
+**基本用法：**
+```
+ccusage session                          # 列出所有 session
+ccusage session --session-id <UUID>      # 依 session UUID 查詢
+ccusage session --session-name <name>    # 依 session name 查詢（精確匹配）
+```
+
+**旗標：**
+
+| 旗標 | 說明 |
+|------|------|
+| `--format, -f` | 輸出格式 (table/json/csv)，預設 table |
+| `--session-id` | 依 session UUID 過濾 |
+| `--session-name` | 依 session name 精確過濾 |
+| `--since` | 開始日期 (YYYY-MM-DD) |
+| `--until` | 結束日期 (YYYY-MM-DD) |
+| `--timezone, -z` | 時區設定 |
+| `--no-color` | 停用色彩輸出 |
+
+**過濾模式：**
+指定 `--session-id` 或 `--session-name` 時，報表以 Session 為大區塊，逐行列出每個 Source File 的 Models、Input、Output、Cache Create、Cache Read、Total Tokens、Cost、Last Activity。
+
+**Session 名稱解析：**
+Session 名稱從 JSONL 中的 `custom-title` 和 `agent-name` 條目取得。名稱會在全域範圍內回填（backfill），子代理（subagent）檔案也會取得對應的 session 名稱。
+
 ## 5. 共享參數配置
 
 ### 5.1 共享參數定義

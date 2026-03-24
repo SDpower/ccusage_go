@@ -14,8 +14,13 @@ type UsageEntry struct {
 	OutputTokens int                    `json:"output_tokens"`
 	TotalTokens  int                    `json:"total_tokens"`
 	Cost         float64                `json:"cost,omitempty"`
-	SessionID    string                 `json:"session_id"`
+	APICost        float64                `json:"api_cost,omitempty"`  // input + output only, no cache
+	CacheCreateCost float64               `json:"cache_create_cost,omitempty"`
+	CacheReadCost  float64                `json:"cache_read_cost,omitempty"`
+	SessionID      string                 `json:"session_id"`
+	SessionName  string                 `json:"session_name,omitempty"`
 	BlockType    string                 `json:"block_type,omitempty"`
+	SourceFile   string                 `json:"-"`
 	Raw          map[string]interface{} `json:"-"`
 }
 
@@ -46,15 +51,37 @@ type SessionInfo struct {
 	EndTime              time.Time     `json:"end_time"`
 	Duration             time.Duration `json:"duration"`
 	TotalCost            float64       `json:"total_cost"`
+	TotalAPICost         float64       `json:"total_api_cost"`
 	TotalTokens          int           `json:"total_tokens"`
 	InputTokens          int           `json:"input_tokens"`
 	OutputTokens         int           `json:"output_tokens"`
 	CacheCreationTokens  int           `json:"cache_creation_tokens"`
+	CacheCreateCost      float64       `json:"cache_create_cost"`
 	CacheReadTokens      int           `json:"cache_read_tokens"`
+	CacheReadCost        float64       `json:"cache_read_cost"`
 	RequestCount         int           `json:"request_count"`
 	ProjectPath          string        `json:"project_path"`
+	SessionName          string        `json:"session_name,omitempty"`
+	SessionIDs           []string      `json:"session_ids,omitempty"`
+	SourceFiles          []string      `json:"source_files,omitempty"`
 	ModelsUsed           []string      `json:"models_used"`
 	LastActivity         time.Time     `json:"last_activity"`
+}
+
+type SourceFileStat struct {
+	FilePath          string    `json:"file_path"`
+	InputTokens       int       `json:"input_tokens"`
+	OutputTokens      int       `json:"output_tokens"`
+	CacheCreateTokens int       `json:"cache_create_tokens"`
+	CacheCreateCost   float64   `json:"cache_create_cost"`
+	CacheReadTokens   int       `json:"cache_read_tokens"`
+	CacheReadCost     float64   `json:"cache_read_cost"`
+	TotalTokens       int       `json:"total_tokens"`
+	Cost              float64   `json:"cost"`
+	APICost           float64   `json:"api_cost"`
+	ModelsUsed        []string  `json:"models_used"`
+	LastActivity      time.Time `json:"last_activity"`
+	EntryCount        int       `json:"entry_count"`
 }
 
 type BlockInfo struct {

@@ -117,6 +117,12 @@ sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 # 依對話分析
 ./ccusage_go session
 
+# 依 session name 查詢
+./ccusage_go session --session-name my-feature
+
+# 依 session ID 查詢
+./ccusage_go session --session-id ca81db6e-cb9b-4b53-995b-f5d58b0e52f1
+
 # 5 小時計費區塊
 ./ccusage_go blocks
 
@@ -169,6 +175,7 @@ sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 
 ### ✅ 已實作功能
 
+- 💰 **詳細費用明細**：每列報表顯示 API Cost、Cache Create Cost (CC Cost)、Cache Read Cost (CR Cost) 與 Total Cost
 - 📊 **每日報告**：每天的 token 使用量和成本
 - 📈 **月度報告**：彙總的月度統計資料  
 - 💬 **對話分析**：依對話階段的使用量

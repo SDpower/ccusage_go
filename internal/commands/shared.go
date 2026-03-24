@@ -35,6 +35,29 @@ func getDefaultDataPath() string {
 	return claudePath
 }
 
+func filterEntriesBySessionID(entries []types.UsageEntry, sessionID string) []types.UsageEntry {
+	var filtered []types.UsageEntry
+	for _, entry := range entries {
+		if entry.SessionID == sessionID {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
+}
+
+func filterEntriesBySessionName(entries []types.UsageEntry, sessionName string) []types.UsageEntry {
+	if sessionName == "" {
+		return entries
+	}
+	var filtered []types.UsageEntry
+	for _, entry := range entries {
+		if entry.SessionName == sessionName {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
+}
+
 func filterEntriesByDate(entries []types.UsageEntry, since, until string) []types.UsageEntry {
 	var filtered []types.UsageEntry
 	

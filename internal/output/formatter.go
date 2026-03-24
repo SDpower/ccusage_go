@@ -247,15 +247,22 @@ func (f *Formatter) formatCSV(entries []types.UsageEntry) (string, error) {
 
 func (f *Formatter) formatSessionCSV(sessions []types.SessionInfo) (string, error) {
 	var output strings.Builder
-	output.WriteString("session_id,start_time,end_time,duration_seconds,total_cost,total_tokens,request_count,project_path\n")
-	
+	output.WriteString("session_id,session_name,session_ids,source_files,start_time,end_time,duration_seconds,total_cost,cache_create_cost,cache_read_cost,total_tokens,request_count,project_path\n")
+
 	for _, session := range sessions {
-		output.WriteString(fmt.Sprintf("%s,%s,%s,%.0f,%.6f,%d,%d,%s\n",
+		sessionIDs := strings.Join(session.SessionIDs, ";")
+		sourceFiles := strings.Join(session.SourceFiles, ";")
+		output.WriteString(fmt.Sprintf("%s,%s,%s,%s,%s,%s,%.0f,%.6f,%.6f,%.6f,%d,%d,%s\n",
 			session.SessionID,
+			session.SessionName,
+			sessionIDs,
+			sourceFiles,
 			session.StartTime.Format(time.RFC3339),
 			session.EndTime.Format(time.RFC3339),
 			session.Duration.Seconds(),
 			session.TotalCost,
+			session.CacheCreateCost,
+			session.CacheReadCost,
 			session.TotalTokens,
 			session.RequestCount,
 			session.ProjectPath,

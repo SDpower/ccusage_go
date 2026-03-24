@@ -404,6 +404,69 @@ func GenerateSessionReport(session Session) SessionReport {
 }
 ```
 
+### 6.3 Session 明細報表與來源檔案統計
+
+v0.12.0 新增了 Session 明細報表功能。當使用 `--session-id` 或 `--session-name` 過濾時，報表會以 Session 為大區塊，逐行列出每個 Source File 的統計資料。
+
+**SourceFileStat 類型：**
+
+```go
+type SourceFileStat struct {
+    SourceFile      string        `json:"source_file"`
+    Models          []string      `json:"models"`
+    InputTokens     int           `json:"input_tokens"`
+    OutputTokens    int           `json:"output_tokens"`
+    CacheTokens     int           `json:"cache_creation_tokens"`
+    CacheReadTokens int           `json:"cache_read_tokens"`
+    TotalTokens     int           `json:"total_tokens"`
+    Cost            float64       `json:"cost"`
+    LastActivity    time.Time     `json:"last_activity"`
+}
+```
+
+**AggregateBySourceFile 方法：**
+
+```go
+// calculator.AggregateBySourceFile 將 session 內的 UsageEntry
+// 依 SourceFile 分組並彙總統計資料
+func (c *Calculator) AggregateBySourceFile(entries []UsageEntry) []SourceFileStat {
+    // 依 SourceFile 分組
+    // 彙總各檔案的 token 用量與成本
+    // Last Activity 顯示該檔案最後一筆活動的本地時區日期+時間
+}
+```
+
+**Daily/Monthly 報表增強：**
+Daily 和 Monthly 報表現在包含「Sessions」欄位，顯示該時間區間內的不重複 session 數量。
+
+**CSV 輸出增強：**
+CSV 輸出現在包含 `session_name`、`session_ids`、`source_files` 欄位。
+
+### 6.4 CC Cost / CR Cost 費用明細欄位
+
+v0.12.0 起，所有報表（Daily、Monthly、Session、Session Detail）新增獨立的 cache 費用欄位：
+
+| 欄位 | 說明 |
+|------|------|
+| **CC Cost (USD)** | Cache Create Cost，cache 建立的費用 |
+| **CR Cost (USD)** | Cache Read Cost，cache 讀取的費用 |
+| **API Cost (USD)** | 僅含 input + output token 的費用（不含 cache） |
+| **Cost (USD)** | 總費用 = API Cost + CC Cost + CR Cost |
+
+**欄位順序：**
+`... | Cache Create | CC Cost (USD) | Cache Read | CR Cost (USD) | Total Tokens | API Cost (USD) | Cost (USD) | ...`
+
+**舊版資料處理：**
+當 JSONL 資料不含 cache 資訊時，CC Cost 和 CR Cost 欄位顯示 `-`。
+
+**CSV 輸出：**
+CSV 格式新增 `cache_create_cost` 和 `cache_read_cost` 欄位。
+
+**相關型別變更：**
+- `UsageEntry` 新增 `CacheCreateCost *float64` 和 `CacheReadCost *float64`
+- `SessionInfo`（SessionUsage）新增 `CacheCreateCost *float64` 和 `CacheReadCost *float64`
+- `SourceFileStat` 新增 `CacheCreateCost *float64` 和 `CacheReadCost *float64`
+
 ## 7. Blocks Report 模組
 
 ### 7.1 5小時區塊計算
