@@ -3,6 +3,9 @@ package usage
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -206,13 +209,13 @@ func TestGetTokenFromEnvEmpty(t *testing.T) {
 	}
 }
 
-func TestGetTokenFromFile(t *testing.T) {
+func TestGetCredentialFromFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	credData := `{
 		"claudeAiOauth": {
 			"accessToken": "file-token-456",
 			"refreshToken": "refresh-token",
-			"expiresAt": 9999999999
+			"expiresAt": 9999999999999
 		}
 	}`
 	if err := os.WriteFile(filepath.Join(tmpDir, ".credentials.json"), []byte(credData), 0600); err != nil {
@@ -221,25 +224,28 @@ func TestGetTokenFromFile(t *testing.T) {
 
 	t.Setenv("CLAUDE_CONFIG_DIR", tmpDir)
 
-	token, err := getTokenFromFile()
+	cred, err := getCredentialFromFile()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if token != "file-token-456" {
-		t.Errorf("token = %v, want file-token-456", token)
+	if cred.AccessToken != "file-token-456" {
+		t.Errorf("AccessToken = %v, want file-token-456", cred.AccessToken)
+	}
+	if cred.RefreshToken != "refresh-token" {
+		t.Errorf("RefreshToken = %v, want refresh-token", cred.RefreshToken)
 	}
 }
 
-func TestGetTokenFromFileMissing(t *testing.T) {
+func TestGetCredentialFromFileMissing(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 
-	_, err := getTokenFromFile()
+	_, err := getCredentialFromFile()
 	if err == nil {
 		t.Error("expected error for missing credentials file")
 	}
 }
 
-func TestGetTokenFromFileNoAccessToken(t *testing.T) {
+func TestGetCredentialFromFileNoAccessToken(t *testing.T) {
 	tmpDir := t.TempDir()
 	credData := `{"claudeAiOauth": {"refreshToken": "refresh-only"}}`
 	if err := os.WriteFile(filepath.Join(tmpDir, ".credentials.json"), []byte(credData), 0600); err != nil {
@@ -248,8 +254,167 @@ func TestGetTokenFromFileNoAccessToken(t *testing.T) {
 
 	t.Setenv("CLAUDE_CONFIG_DIR", tmpDir)
 
-	_, err := getTokenFromFile()
+	_, err := getCredentialFromFile()
 	if err == nil {
 		t.Error("expected error for missing access token")
+	}
+}
+
+// --- 新增測試：isExpired ---
+
+func TestIsExpired(t *testing.T) {
+	tests := []struct {
+		name      string
+		expiresAt int64
+		want      bool
+	}{
+		{"未過期", time.Now().UnixMilli() + 3600*1000, false},
+		{"已過期", time.Now().UnixMilli() - 1000, true},
+		{"剛好過期", time.Now().UnixMilli(), true},
+		{"無過期時間", 0, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cred := &oauthCredential{ExpiresAt: tt.expiresAt}
+			if got := cred.isExpired(); got != tt.want {
+				t.Errorf("isExpired() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// --- 新增測試：refreshCredential ---
+
+func TestRefreshCredential(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("missing Content-Type header")
+		}
+
+		var req refreshTokenRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("failed to decode request: %v", err)
+		}
+		if req.GrantType != "refresh_token" {
+			t.Errorf("grant_type = %v, want refresh_token", req.GrantType)
+		}
+		if req.RefreshToken != "old-refresh" {
+			t.Errorf("refresh_token = %v, want old-refresh", req.RefreshToken)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(refreshTokenResponse{
+			AccessToken:  "new-access-token",
+			RefreshToken: "new-refresh-token",
+			ExpiresIn:    3600,
+			Scope:        "user:profile user:inference",
+		})
+	}))
+	defer server.Close()
+
+	// 暫時替換 tokenURL（透過覆蓋 refreshCredentialWithURL）
+	cred := &oauthCredential{
+		AccessToken:  "old-access",
+		RefreshToken: "old-refresh",
+		Scopes:       []string{"user:profile", "user:inference"},
+	}
+
+	newCred, err := refreshCredentialWithURL(cred, server.URL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if newCred.AccessToken != "new-access-token" {
+		t.Errorf("AccessToken = %v, want new-access-token", newCred.AccessToken)
+	}
+	if newCred.RefreshToken != "new-refresh-token" {
+		t.Errorf("RefreshToken = %v, want new-refresh-token", newCred.RefreshToken)
+	}
+	if newCred.isExpired() {
+		t.Error("new credential should not be expired")
+	}
+}
+
+func TestRefreshCredentialNoRefreshToken(t *testing.T) {
+	cred := &oauthCredential{AccessToken: "access-only"}
+	_, err := refreshCredential(cred)
+	if err == nil {
+		t.Error("expected error for missing refresh token")
+	}
+}
+
+func TestRefreshCredentialServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cred := &oauthCredential{
+		RefreshToken: "some-refresh",
+		Scopes:       []string{"user:profile"},
+	}
+
+	_, err := refreshCredentialWithURL(cred, server.URL)
+	if err == nil {
+		t.Error("expected error for server error response")
+	}
+}
+
+func TestRefreshCredentialKeepsOldRefreshToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// 伺服器未回傳新 refresh_token
+		fmt.Fprintf(w, `{"access_token": "new-at", "expires_in": 3600, "scope": "user:profile"}`)
+	}))
+	defer server.Close()
+
+	cred := &oauthCredential{
+		RefreshToken: "original-refresh",
+		Scopes:       []string{"user:profile"},
+	}
+
+	newCred, err := refreshCredentialWithURL(cred, server.URL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if newCred.RefreshToken != "original-refresh" {
+		t.Errorf("RefreshToken = %v, want original-refresh (should keep old)", newCred.RefreshToken)
+	}
+}
+
+// --- 新增測試：saveCredentialToFile ---
+
+func TestSaveCredentialToFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", tmpDir)
+
+	cred := &oauthCredential{
+		AccessToken:  "saved-token",
+		RefreshToken: "saved-refresh",
+		ExpiresAt:    9999999999999,
+		Scopes:       []string{"user:profile"},
+	}
+
+	if err := saveCredentialToFile(cred); err != nil {
+		t.Fatalf("saveCredentialToFile failed: %v", err)
+	}
+
+	// 驗證檔案內容
+	data, err := os.ReadFile(filepath.Join(tmpDir, ".credentials.json"))
+	if err != nil {
+		t.Fatalf("failed to read saved file: %v", err)
+	}
+
+	var saved credentialsFile
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatalf("failed to parse saved file: %v", err)
+	}
+
+	if saved.ClaudeAiOauth.AccessToken != "saved-token" {
+		t.Errorf("saved AccessToken = %v, want saved-token", saved.ClaudeAiOauth.AccessToken)
 	}
 }

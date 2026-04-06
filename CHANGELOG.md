@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.13.0] - 2026-04-06
+
+### ✨ Features
+
+- **feat**: OAuth Token 自動 Refresh 機制
+  - Token 過期時自動呼叫 `POST platform.claude.com/v1/oauth/token` 換取新 token
+  - Usage API 收到 401 時自動 refresh + 重試一次
+  - 跨平台 credential 儲存：macOS Keychain / Linux & Windows `.credentials.json`
+  - Refresh 後自動寫回 Keychain 或 `.credentials.json`（0600 權限）
+  - 併發控制防止同時多次 refresh
+
+### 🐛 Bug Fixes
+
+- **fix**: 補齊 Usage API 缺少的 HTTP headers
+  - 新增 `Content-Type: application/json` 和 `User-Agent: claude-code/2.1.92`（實測 4 個 headers 缺一不可）
+- **fix**: Token 讀取優先級調整為 env > Keychain > file
+  - v2.x 預設使用 macOS Keychain，`.credentials.json` 可能不存在
+  - 改為優先讀取 Keychain，再 fallback 到 credentials file
+
+### 📁 Files Changed
+
+- `internal/usage/token.go` — 改造為回傳完整 `*oauthCredential`，新增 `isExpired()`、`getConfigDir()`
+- `internal/usage/refresh.go` — 新增 token refresh、credential 寫回（跨平台）、`getValidToken()`、`forceRefreshToken()`
+- `internal/usage/usage.go` — 401 自動重試、補齊 4 個必要 headers
+- `internal/usage/usage_test.go` — 新增 isExpired、refresh、save、401 重試等 6 個測試
+
+### 🧪 Tests Added
+
+- `TestIsExpired` — 4 子測試（未過期、已過期、剛好過期、無過期時間）
+- `TestRefreshCredential` — mock HTTP server 測試 refresh 流程
+- `TestRefreshCredentialNoRefreshToken` — 無 refresh token 時的錯誤處理
+- `TestRefreshCredentialServerError` — 伺服器錯誤時的處理
+- `TestRefreshCredentialKeepsOldRefreshToken` — 伺服器未回傳新 refresh token 時保留舊的
+- `TestSaveCredentialToFile` — 寫入 `.credentials.json` 並驗證內容
+
+---
+
 ## [v0.12.0] - 2026-03-24
 
 ### ✨ Features

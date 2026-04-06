@@ -91,15 +91,15 @@ make install
 
 ```bash
 # macOS Apple Silicon
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.1/ccusage_go-darwin-arm64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.13.0/ccusage_go-darwin-arm64.tar.gz | tar xz
 sudo mv ccusage_go-darwin-arm64 /usr/local/bin/ccusage_go
 
 # macOS Intel
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.1/ccusage_go-darwin-amd64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.13.0/ccusage_go-darwin-amd64.tar.gz | tar xz
 sudo mv ccusage_go-darwin-amd64 /usr/local/bin/ccusage_go
 
 # Linux x64
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.1/ccusage_go-linux-amd64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.13.0/ccusage_go-linux-amd64.tar.gz | tar xz
 sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 ```
 
@@ -182,6 +182,7 @@ sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 - ⏱️ **計費區塊**：5 小時計費視窗追蹤
 - 🔴 **即時監控**：具有漸變進度條的即時使用量儀表板
 - 📊 **使用量配額**：即時顯示 Claude API 配額（session/每週限額）
+- 🔄 **Token 自動更新**：OAuth token 過期或收到 401 時自動 refresh，跨平台 credential 儲存（macOS Keychain / Linux & Windows 檔案）
 - 🎨 **多種輸出格式**：表格（預設）、JSON、CSV
 - 🌍 **時區支援**：可配置報告時區
 - 💾 **離線模式**：無需網路連線即可運作

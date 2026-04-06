@@ -91,15 +91,15 @@ Download from [GitHub Releases](https://github.com/SDpower/ccusage_go/releases)
 
 ```bash
 # macOS Apple Silicon
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.1/ccusage_go-darwin-arm64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.13.0/ccusage_go-darwin-arm64.tar.gz | tar xz
 sudo mv ccusage_go-darwin-arm64 /usr/local/bin/ccusage_go
 
 # macOS Intel
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.1/ccusage_go-darwin-amd64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.13.0/ccusage_go-darwin-amd64.tar.gz | tar xz
 sudo mv ccusage_go-darwin-amd64 /usr/local/bin/ccusage_go
 
 # Linux x64
-curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.11.1/ccusage_go-linux-amd64.tar.gz | tar xz
+curl -L https://github.com/SDpower/ccusage_go/releases/download/v0.13.0/ccusage_go-linux-amd64.tar.gz | tar xz
 sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 ```
 
@@ -182,6 +182,7 @@ sudo mv ccusage_go-linux-amd64 /usr/local/bin/ccusage_go
 - ⏱️ **Billing Blocks**: 5-hour billing window tracking
 - 🔴 **Live Monitoring**: Real-time usage dashboard with gradient progress bars
 - 📊 **Usage Limits**: Live display of Claude API quota (session/weekly limits)
+- 🔄 **Auto Token Refresh**: Automatic OAuth token refresh on expiry or 401, with cross-platform credential storage (macOS Keychain / Linux & Windows file)
 - 🎨 **Multiple Output Formats**: Table (default), JSON, CSV
 - 🌍 **Timezone Support**: Configurable timezone for reports
 - 💾 **Offline Mode**: Works without internet connection

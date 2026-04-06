@@ -72,24 +72,29 @@ func (c *Client) GetUsage(ctx context.Context) *UsageResponse {
 	return resp
 }
 
-// fetchUsage calls the OAuth usage API
+// fetchUsage calls the OAuth usage API, with 401 auto-refresh retry
 func (c *Client) fetchUsage(ctx context.Context) (*UsageResponse, error) {
-	token, err := GetOAuthToken()
+	token, err := getValidToken()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get OAuth token: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", usageAPIURL, nil)
+	resp, err := c.doUsageRequest(ctx, token)
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
+	// 401 → refresh token → 重試一次
+	if resp.StatusCode == http.StatusUnauthorized {
+		resp.Body.Close()
+		newToken, refreshErr := forceRefreshToken()
+		if refreshErr != nil {
+			return nil, fmt.Errorf("usage API returned 401 and refresh failed: %w", refreshErr)
+		}
+		resp, err = c.doUsageRequest(ctx, newToken)
+		if err != nil {
+			return nil, err
+		}
 	}
 	defer resp.Body.Close()
 
@@ -103,6 +108,21 @@ func (c *Client) fetchUsage(ctx context.Context) (*UsageResponse, error) {
 	}
 
 	return &usageResp, nil
+}
+
+// doUsageRequest 執行 usage API HTTP 請求
+func (c *Client) doUsageRequest(ctx context.Context, token string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", usageAPIURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "claude-code/2.1.92")
+
+	return c.httpClient.Do(req)
 }
 
 // FormatResetTime formats a reset time string for display in the given timezone.

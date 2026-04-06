@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // credentialsFile represents the structure of .credentials.json
@@ -18,33 +19,50 @@ type credentialsFile struct {
 type oauthCredential struct {
 	AccessToken      string   `json:"accessToken"`
 	RefreshToken     string   `json:"refreshToken"`
-	ExpiresAt        int64    `json:"expiresAt"`
+	ExpiresAt        int64    `json:"expiresAt"` // Unix timestamp ms
 	Scopes           []string `json:"scopes"`
 	RateLimitTier    string   `json:"rateLimitTier"`
 	SubscriptionType string   `json:"subscriptionType"`
 }
 
-// GetOAuthToken retrieves the Claude OAuth token from available sources.
-// Priority: environment variable > credentials file > macOS Keychain
-func GetOAuthToken() (string, error) {
-	// 1. Environment variable
+// isExpired 檢查 token 是否已過期
+func (c *oauthCredential) isExpired() bool {
+	if c.ExpiresAt == 0 {
+		return false // 無過期時間，視為不過期（env token）
+	}
+	return c.ExpiresAt <= time.Now().UnixMilli()
+}
+
+// GetOAuthCredential 取得完整 OAuth credential。
+// 優先級：環境變數 > Keychain (macOS) > .credentials.json
+func GetOAuthCredential() (*oauthCredential, error) {
+	// 1. 環境變數（只有 token，無 refresh 能力）
 	if token, ok := getTokenFromEnv(); ok {
-		return token, nil
+		return &oauthCredential{AccessToken: token}, nil
 	}
 
-	// 2. Credentials file
-	if token, err := getTokenFromFile(); err == nil && token != "" {
-		return token, nil
-	}
-
-	// 3. macOS Keychain (darwin only)
+	// 2. macOS Keychain（v2.x 預設儲存位置）
 	if runtime.GOOS == "darwin" {
-		if token, err := getTokenFromKeychain(); err == nil && token != "" {
-			return token, nil
+		if cred, err := getCredentialFromKeychain(); err == nil && cred != nil {
+			return cred, nil
 		}
 	}
 
-	return "", fmt.Errorf("no OAuth token found")
+	// 3. .credentials.json（Linux/Windows 或 macOS fallback）
+	if cred, err := getCredentialFromFile(); err == nil && cred != nil {
+		return cred, nil
+	}
+
+	return nil, fmt.Errorf("no OAuth credential found")
+}
+
+// GetOAuthToken 取得 access token string（向後相容包裝）
+func GetOAuthToken() (string, error) {
+	cred, err := GetOAuthCredential()
+	if err != nil {
+		return "", err
+	}
+	return cred.AccessToken, nil
 }
 
 // getTokenFromEnv reads token from CLAUDE_CODE_OAUTH_TOKEN environment variable
@@ -53,57 +71,60 @@ func getTokenFromEnv() (string, bool) {
 	return token, token != ""
 }
 
-// getTokenFromFile reads token from .credentials.json
-func getTokenFromFile() (string, error) {
-	// Try CLAUDE_CONFIG_DIR first, then default ~/.claude
-	configDir := os.Getenv("CLAUDE_CONFIG_DIR")
-	if configDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		configDir = filepath.Join(home, ".claude")
-	}
-
+// getCredentialFromFile 從 .credentials.json 讀取完整 credential
+func getCredentialFromFile() (*oauthCredential, error) {
+	configDir := getConfigDir()
 	credPath := filepath.Join(configDir, ".credentials.json")
 	data, err := os.ReadFile(credPath)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	var creds credentialsFile
 	if err := json.Unmarshal(data, &creds); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if creds.ClaudeAiOauth == nil || creds.ClaudeAiOauth.AccessToken == "" {
-		return "", fmt.Errorf("no access token in credentials file")
+		return nil, fmt.Errorf("no access token in credentials file")
 	}
 
-	return creds.ClaudeAiOauth.AccessToken, nil
+	return creds.ClaudeAiOauth, nil
 }
 
-// getTokenFromKeychain reads token from macOS Keychain
-func getTokenFromKeychain() (string, error) {
+// getCredentialFromKeychain 從 macOS Keychain 讀取完整 credential
+func getCredentialFromKeychain() (*oauthCredential, error) {
 	cmd := exec.Command("security", "find-generic-password", "-s", "Claude Code-credentials", "-w")
 	output, err := cmd.Output()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	token := string(output)
-	if token == "" {
-		return "", fmt.Errorf("empty keychain entry")
+	trimmed := strings.TrimSpace(string(output))
+	if trimmed == "" {
+		return nil, fmt.Errorf("empty keychain entry")
 	}
 
-	// Try parsing as JSON (keychain may store the full credentials JSON)
+	// Keychain 儲存完整 credentials JSON
 	var creds credentialsFile
-	if err := json.Unmarshal(output, &creds); err == nil {
+	if err := json.Unmarshal([]byte(trimmed), &creds); err == nil {
 		if creds.ClaudeAiOauth != nil && creds.ClaudeAiOauth.AccessToken != "" {
-			return creds.ClaudeAiOauth.AccessToken, nil
+			return creds.ClaudeAiOauth, nil
 		}
 	}
 
-	// If not JSON, treat as raw token (trimming whitespace)
-	return strings.TrimSpace(token), nil
+	// 非 JSON，視為裸 token
+	return &oauthCredential{AccessToken: trimmed}, nil
+}
+
+// getConfigDir 回傳 Claude config 目錄路徑
+func getConfigDir() string {
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		return dir
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(os.TempDir(), ".claude")
+	}
+	return filepath.Join(home, ".claude")
 }
