@@ -13,7 +13,12 @@ type Calculator struct {
 }
 
 type PricingService interface {
-	GetModelPrice(ctx context.Context, model string) (inputPrice, outputPrice, cacheCreatePrice, cacheReadPrice float64, err error)
+	// GetModelPrice returns per-token (or per-request) prices for a model.
+	// webSearchPrice / webFetchPrice are per-request (server_tool_use billing).
+	GetModelPrice(ctx context.Context, model string) (
+		inputPrice, outputPrice, cacheCreatePrice, cacheReadPrice,
+		webSearchPrice, webFetchPrice float64, err error,
+	)
 }
 
 func New(pricingService PricingService) *Calculator {
@@ -39,30 +44,36 @@ func (c *Calculator) CalculateCost(entry *types.UsageEntry) error {
 	return nil
 }
 
-// calculateSingleCost calculates cost for a single entry
+// calculateSingleCost calculates cost for a single entry using the
+// first-class token fields. server_tool_use charges (web_search / web_fetch)
+// are added to total Cost but excluded from APICost.
 func (c *Calculator) calculateSingleCost(ctx context.Context, entry *types.UsageEntry) {
-	inputPrice, outputPrice, cacheCreatePrice, cacheReadPrice, err := c.pricingService.GetModelPrice(ctx, entry.Model)
+	inputPrice, outputPrice, cacheCreatePrice, cacheReadPrice,
+		webSearchPrice, webFetchPrice, err := c.pricingService.GetModelPrice(ctx, entry.Model)
 	if err != nil {
-		// Continue without cost if pricing fails
 		return
 	}
 
-	// Calculate API cost (input + output only, no cache)
 	apiCost := float64(entry.InputTokens)*inputPrice +
 		float64(entry.OutputTokens)*outputPrice
 	entry.APICost = apiCost
 
-	// Calculate total cost including cache tokens
 	cost := apiCost
-	if entry.Raw != nil {
-		if cacheCreate, ok := entry.Raw["cache_creation_input_tokens"].(int); ok {
-			entry.CacheCreateCost = float64(cacheCreate) * cacheCreatePrice
-			cost += entry.CacheCreateCost
-		}
-		if cacheRead, ok := entry.Raw["cache_read_input_tokens"].(int); ok {
-			entry.CacheReadCost = float64(cacheRead) * cacheReadPrice
-			cost += entry.CacheReadCost
-		}
+	if entry.CacheCreationInputTokens > 0 {
+		entry.CacheCreateCost = float64(entry.CacheCreationInputTokens) * cacheCreatePrice
+		cost += entry.CacheCreateCost
+	}
+	if entry.CacheReadInputTokens > 0 {
+		entry.CacheReadCost = float64(entry.CacheReadInputTokens) * cacheReadPrice
+		cost += entry.CacheReadCost
+	}
+	if entry.WebSearchRequests > 0 {
+		entry.WebSearchCost = float64(entry.WebSearchRequests) * webSearchPrice
+		cost += entry.WebSearchCost
+	}
+	if entry.WebFetchRequests > 0 {
+		entry.WebFetchCost = float64(entry.WebFetchRequests) * webFetchPrice
+		cost += entry.WebFetchCost
 	}
 	entry.Cost = cost
 }
@@ -159,15 +170,9 @@ func (c *Calculator) GenerateSessionReport(entries []types.UsageEntry) []types.S
 				modelSet[entry.Model] = true
 			}
 
-			// Extract cache tokens from Raw data
-			if entry.Raw != nil {
-				if cc, ok := entry.Raw["cache_creation_input_tokens"].(int); ok {
-					session.CacheCreationTokens += cc
-				}
-				if cr, ok := entry.Raw["cache_read_input_tokens"].(int); ok {
-					session.CacheReadTokens += cr
-				}
-			}
+			// Cache tokens come from first-class fields
+			session.CacheCreationTokens += entry.CacheCreationInputTokens
+			session.CacheReadTokens += entry.CacheReadInputTokens
 		}
 
 		// Convert model set to sorted slice
@@ -220,15 +225,8 @@ func (c *Calculator) AggregateBySourceFile(entries []types.UsageEntry) []types.S
 		stat.CacheReadCost += entry.CacheReadCost
 		stat.EntryCount++
 
-		// Cache tokens from Raw
-		if entry.Raw != nil {
-			if cc, ok := entry.Raw["cache_creation_input_tokens"].(int); ok {
-				stat.CacheCreateTokens += cc
-			}
-			if cr, ok := entry.Raw["cache_read_input_tokens"].(int); ok {
-				stat.CacheReadTokens += cr
-			}
-		}
+		stat.CacheCreateTokens += entry.CacheCreationInputTokens
+		stat.CacheReadTokens += entry.CacheReadInputTokens
 
 		// Total tokens
 		stat.TotalTokens = stat.InputTokens + stat.OutputTokens + stat.CacheCreateTokens + stat.CacheReadTokens

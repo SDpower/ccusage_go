@@ -86,23 +86,51 @@ func (ic *IncrementalCache) Update(
 			continue
 		}
 
-		// Collect current JSONL files with their state
+		// Collect current JSONL files with their state.
+		// Sub-agent files live in subagents/ and are tracked under the
+		// "subagents/<filename>" key so the file → state map is unique.
 		currentFiles := make(map[string]FileState)
 		for _, de := range dirEntries {
-			if de.IsDir() || !strings.HasSuffix(strings.ToLower(de.Name()), ".jsonl") {
+			if de.IsDir() {
+				continue
+			}
+			if !strings.HasSuffix(strings.ToLower(de.Name()), ".jsonl") {
 				continue
 			}
 			info, err := de.Info()
 			if err != nil {
 				continue
 			}
-			// Apply time filter
 			if modifiedWithin > 0 && info.ModTime().Before(cutoffTime) {
 				continue
 			}
 			currentFiles[de.Name()] = FileState{
 				ModTime: info.ModTime(),
 				Size:    info.Size(),
+			}
+		}
+
+		subagentsDir := filepath.Join(projectDir, "subagents")
+		if subEntries, subErr := os.ReadDir(subagentsDir); subErr == nil {
+			for _, se := range subEntries {
+				if se.IsDir() {
+					continue
+				}
+				if !strings.HasSuffix(strings.ToLower(se.Name()), ".jsonl") {
+					continue
+				}
+				info, err := se.Info()
+				if err != nil {
+					continue
+				}
+				if modifiedWithin > 0 && info.ModTime().Before(cutoffTime) {
+					continue
+				}
+				key := filepath.Join("subagents", se.Name())
+				currentFiles[key] = FileState{
+					ModTime: info.ModTime(),
+					Size:    info.Size(),
+				}
 			}
 		}
 
@@ -175,27 +203,12 @@ func (ic *IncrementalCache) Update(
 				continue
 			}
 
-			// Calculate costs and clear Raw data
+			// Calculate costs and trim Raw to the small set of fields that
+			// downstream aggregation still needs (usage_limit_reset_time).
 			if calculator != nil {
 				for i := range fileEntries {
 					calculator.CalculateCost(&fileEntries[i])
-					if fileEntries[i].Raw != nil {
-						cacheData := make(map[string]interface{})
-						if cc, ex := fileEntries[i].Raw["cache_creation_input_tokens"]; ex {
-							cacheData["cache_creation_input_tokens"] = cc
-						}
-						if cr, ex := fileEntries[i].Raw["cache_read_input_tokens"]; ex {
-							cacheData["cache_read_input_tokens"] = cr
-						}
-						if resetTime, ex := fileEntries[i].Raw["usage_limit_reset_time"]; ex {
-							cacheData["usage_limit_reset_time"] = resetTime
-						}
-						if len(cacheData) > 0 {
-							fileEntries[i].Raw = cacheData
-						} else {
-							fileEntries[i].Raw = nil
-						}
-					}
+					clearRawExceptKeys(&fileEntries[i], rawRetainKeys)
 				}
 			}
 

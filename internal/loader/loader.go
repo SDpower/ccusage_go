@@ -20,6 +20,30 @@ type CostCalculator interface {
 	CalculateCost(entry *types.UsageEntry) error
 }
 
+// rawRetainKeys lists raw JSONL fields that must survive Raw cleanup.
+// cache_* token fields are now first-class on UsageEntry, so they no longer
+// need preserving in Raw. usage_limit_reset_time is still consumed by blocks.
+var rawRetainKeys = []string{"usage_limit_reset_time"}
+
+// clearRawExceptKeys drops every Raw entry except the named keys, keeping
+// memory bounded after first-class fields are populated.
+func clearRawExceptKeys(entry *types.UsageEntry, keep []string) {
+	if entry.Raw == nil {
+		return
+	}
+	preserved := make(map[string]interface{}, len(keep))
+	for _, k := range keep {
+		if v, ok := entry.Raw[k]; ok {
+			preserved[k] = v
+		}
+	}
+	if len(preserved) == 0 {
+		entry.Raw = nil
+		return
+	}
+	entry.Raw = preserved
+}
+
 // LoaderOptions configures optional loading behaviors
 type LoaderOptions struct {
 	OnlyActiveSession bool          // Only load active session data
@@ -200,25 +224,7 @@ func (l *Loader) LoadParallelWithOptions(ctx context.Context, paths []string, op
 					if options != nil && options.StreamProcessing && options.Calculator != nil && err == nil {
 						for i := range entries {
 							options.Calculator.CalculateCost(&entries[i])
-							// Clear most Raw data after cost calculation to save memory
-							// Keep only cache token fields that are needed for aggregation
-							if entries[i].Raw != nil {
-								cacheData := make(map[string]interface{})
-								if cc, exists := entries[i].Raw["cache_creation_input_tokens"]; exists {
-									cacheData["cache_creation_input_tokens"] = cc
-								}
-								if cr, exists := entries[i].Raw["cache_read_input_tokens"]; exists {
-									cacheData["cache_read_input_tokens"] = cr
-								}
-								if resetTime, exists := entries[i].Raw["usage_limit_reset_time"]; exists {
-									cacheData["usage_limit_reset_time"] = resetTime
-								}
-								if len(cacheData) > 0 {
-									entries[i].Raw = cacheData
-								} else {
-									entries[i].Raw = nil
-								}
-							}
+							clearRawExceptKeys(&entries[i], rawRetainKeys)
 						}
 					}
 
@@ -353,6 +359,18 @@ func (l *Loader) loadFileWithDedupe(path string, dedupeMap map[string]bool, dedu
 				}
 				continue
 			}
+			// ai-title is the third-priority source for SessionName.
+			// Order: custom-title > agent-name > ai-title.
+			if typeStr == "ai-title" {
+				if title, ok := raw["aiTitle"].(string); ok {
+					if sid, ok := raw["sessionId"].(string); ok {
+						if _, exists := sessionNameMap[sid]; !exists {
+							sessionNameMap[sid] = title
+						}
+					}
+				}
+				continue
+			}
 		}
 
 		// Try to parse entry according to TypeScript schema rules
@@ -401,23 +419,9 @@ func (l *Loader) loadFileWithDedupe(path string, dedupeMap map[string]bool, dedu
 			}
 		}
 
-		// For stream processing, we can clear most of Raw data after parsing
-		// Keep only cache token fields if they exist
-		if entry.Raw != nil {
-			cacheData := make(map[string]interface{})
-			if cc, ok := entry.Raw["cache_creation_input_tokens"]; ok {
-				cacheData["cache_creation_input_tokens"] = cc
-			}
-			if cr, ok := entry.Raw["cache_read_input_tokens"]; ok {
-				cacheData["cache_read_input_tokens"] = cr
-			}
-			if len(cacheData) > 0 {
-				entry.Raw = cacheData
-			} else {
-				entry.Raw = nil
-			}
-		}
-		
+		// Drop bulky Raw fields; retain usage_limit_reset_time (used by blocks).
+		clearRawExceptKeys(&entry, rawRetainKeys)
+
 		entries = append(entries, entry)
 	}
 
@@ -499,8 +503,31 @@ func (l *Loader) parseEntry(raw map[string]interface{}, filePath string) (types.
 	if err := l.validateUsageData(raw, &entry); err != nil {
 		return types.UsageEntry{}, err
 	}
-	
-	// Calculate total tokens (getTotalTokens function equivalent)
+
+	// Top-level cache_* fields are exceedingly rare in real Anthropic JSONL
+	// (cache tokens live under message.usage). Read them only as a final
+	// fallback when validateUsageData did not populate the first-class fields.
+	if entry.CacheCreationInputTokens == 0 {
+		if v, ok := raw["cache_creation_input_tokens"].(float64); ok {
+			entry.CacheCreationInputTokens = int(v)
+		}
+	}
+	if entry.CacheReadInputTokens == 0 {
+		if v, ok := raw["cache_read_input_tokens"].(float64); ok {
+			entry.CacheReadInputTokens = int(v)
+		}
+	}
+
+	// IsSidechain / IsMeta — preserve metadata for breakdown reports.
+	// NEVER use these to filter; sub-agent calls are independently billed.
+	if v, ok := raw["isSidechain"].(bool); ok {
+		entry.IsSidechain = v
+	}
+	if v, ok := raw["isMeta"].(bool); ok {
+		entry.IsMeta = v
+	}
+
+	// Calculate total tokens after all token fields are populated.
 	l.calculateTotalTokens(&entry)
 
 	if cost, ok := raw["cost"].(float64); ok {
@@ -515,21 +542,6 @@ func (l *Loader) parseEntry(raw map[string]interface{}, filePath string) (types.
 
 	if blockType, ok := raw["block_type"].(string); ok {
 		entry.BlockType = blockType
-	}
-
-	// Parse cache-related fields (for flat structure)
-	if cacheCreate, ok := raw["cache_creation_input_tokens"].(float64); ok {
-		if entry.Raw == nil {
-			entry.Raw = make(map[string]interface{})
-		}
-		entry.Raw["cache_creation_input_tokens"] = int(cacheCreate)
-	}
-
-	if cacheRead, ok := raw["cache_read_input_tokens"].(float64); ok {
-		if entry.Raw == nil {
-			entry.Raw = make(map[string]interface{})
-		}
-		entry.Raw["cache_read_input_tokens"] = int(cacheRead)
 	}
 
 	return entry, nil
@@ -647,17 +659,18 @@ func (l *Loader) findProjectDirectories(basePath string) ([]string, error) {
 	return projectDirs, nil
 }
 
-// shouldSkipProject checks if a project directory should be skipped based on activity
+// shouldSkipProject checks if a project directory should be skipped based on activity.
+// Also peeks into the subagents/ subdirectory because sub-agent JSONL files
+// can be the only recent activity for a project.
 func (l *Loader) shouldSkipProject(projectPath string, cutoffTime time.Time) bool {
-	// Check the most recent file modification time in the project
 	entries, err := os.ReadDir(projectPath)
 	if err != nil {
 		return true // Skip on error
 	}
-	
+
 	var latestModTime time.Time
 	hasJSONL := false
-	
+
 	for _, entry := range entries {
 		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".jsonl") {
 			hasJSONL = true
@@ -668,51 +681,110 @@ func (l *Loader) shouldSkipProject(projectPath string, cutoffTime time.Time) boo
 			if info.ModTime().After(latestModTime) {
 				latestModTime = info.ModTime()
 			}
-			// Early exit if we find a recent file
 			if latestModTime.After(cutoffTime) {
-				return false // Don't skip, has recent activity
+				return false
 			}
 		}
 	}
-	
-	// Skip if no JSONL files or all files are old
+
+	// Also inspect subagents/ subdirectory
+	subagentsDir := filepath.Join(projectPath, "subagents")
+	if subEntries, err := os.ReadDir(subagentsDir); err == nil {
+		for _, entry := range subEntries {
+			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".jsonl") {
+				continue
+			}
+			hasJSONL = true
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			if info.ModTime().After(latestModTime) {
+				latestModTime = info.ModTime()
+			}
+			if latestModTime.After(cutoffTime) {
+				return false
+			}
+		}
+	}
+
 	return !hasJSONL || latestModTime.Before(cutoffTime)
 }
 
-// collectProjectFiles collects JSONL files from a project directory
+// collectProjectFiles collects JSONL files from a project directory.
+// Also recurses one level into the subagents/ subdirectory, which holds
+// sub-agent session JSONL files that contribute to the project's cost.
 func (l *Loader) collectProjectFiles(projectPath string, cutoffTime time.Time, applyTimeFilter bool) ([]string, error) {
 	var files []string
-	
+
 	entries, err := os.ReadDir(projectPath)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	for _, entry := range entries {
 		if entry.IsDir() {
-			continue // Skip subdirectories in flat structure
+			if entry.Name() == "subagents" {
+				subFiles, err := l.collectSubagentFiles(filepath.Join(projectPath, entry.Name()), cutoffTime, applyTimeFilter)
+				if err == nil {
+					files = append(files, subFiles...)
+				}
+			}
+			continue
 		}
-		
+
 		if !strings.HasSuffix(strings.ToLower(entry.Name()), ".jsonl") {
-			continue // Skip non-JSONL files
+			continue
 		}
-		
+
 		filePath := filepath.Join(projectPath, entry.Name())
-		
-		// Apply time filter if enabled
+
 		if applyTimeFilter {
 			info, err := entry.Info()
 			if err != nil {
 				continue
 			}
 			if info.ModTime().Before(cutoffTime) {
-				continue // Skip old files
+				continue
 			}
 		}
-		
+
 		files = append(files, filePath)
 	}
-	
+
+	return files, nil
+}
+
+// collectSubagentFiles lists JSONL files inside a subagents/ directory (one level only).
+func (l *Loader) collectSubagentFiles(subagentsDir string, cutoffTime time.Time, applyTimeFilter bool) ([]string, error) {
+	var files []string
+
+	entries, err := os.ReadDir(subagentsDir)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if !strings.HasSuffix(strings.ToLower(entry.Name()), ".jsonl") {
+			continue
+		}
+
+		filePath := filepath.Join(subagentsDir, entry.Name())
+		if applyTimeFilter {
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			if info.ModTime().Before(cutoffTime) {
+				continue
+			}
+		}
+		files = append(files, filePath)
+	}
+
 	return files, nil
 }
 
@@ -899,20 +971,51 @@ func (l *Loader) validateUsageData(raw map[string]interface{}, entry *types.Usag
 		entry.Model = model
 	}
 	
-	// cache_creation_input_tokens is optional
+	// cache_creation_input_tokens — flat takes precedence; fall back to
+	// nested usage.cache_creation.{ephemeral_1h,ephemeral_5m}_input_tokens
+	// (Anthropic 2026 schema).
 	if cacheCreate, ok := usage["cache_creation_input_tokens"].(float64); ok {
-		if entry.Raw == nil {
-			entry.Raw = make(map[string]interface{})
+		entry.CacheCreationInputTokens = int(cacheCreate)
+	} else if nested, ok := usage["cache_creation"].(map[string]interface{}); ok {
+		var sum int
+		if v, ok := nested["ephemeral_1h_input_tokens"].(float64); ok {
+			sum += int(v)
 		}
-		entry.Raw["cache_creation_input_tokens"] = int(cacheCreate)
+		if v, ok := nested["ephemeral_5m_input_tokens"].(float64); ok {
+			sum += int(v)
+		}
+		entry.CacheCreationInputTokens = sum
 	}
-	
+
 	// cache_read_input_tokens is optional
 	if cacheRead, ok := usage["cache_read_input_tokens"].(float64); ok {
-		if entry.Raw == nil {
-			entry.Raw = make(map[string]interface{})
+		entry.CacheReadInputTokens = int(cacheRead)
+	}
+
+	// server_tool_use billing — Anthropic web tools (web_search / web_fetch).
+	if stu, ok := usage["server_tool_use"].(map[string]interface{}); ok {
+		if v, ok := stu["web_search_requests"].(float64); ok {
+			entry.WebSearchRequests = int(v)
 		}
-		entry.Raw["cache_read_input_tokens"] = int(cacheRead)
+		if v, ok := stu["web_fetch_requests"].(float64); ok {
+			entry.WebFetchRequests = int(v)
+		}
+	}
+
+	// diagnostics.cache_miss_reason — optional Anthropic diagnostic payload.
+	if diag, ok := message["diagnostics"].(map[string]interface{}); ok {
+		if reason, ok := diag["cache_miss_reason"].(map[string]interface{}); ok {
+			cmr := &types.CacheMissReason{}
+			if v, ok := reason["type"].(string); ok {
+				cmr.Type = v
+			}
+			if v, ok := reason["cache_missed_input_tokens"].(float64); ok {
+				cmr.CacheMissedInputTokens = int(v)
+			}
+			if cmr.Type != "" || cmr.CacheMissedInputTokens != 0 {
+				entry.CacheMissReason = cmr
+			}
+		}
 	}
 	
 	// costUSD is optional
@@ -932,111 +1035,62 @@ func (l *Loader) validateUsageData(raw map[string]interface{}, entry *types.Usag
 	return nil
 }
 
+// extractProjectPath returns the project directory portion of a JSONL file path.
+// Modern ~/.claude/projects/ uses a flat layout (project/file.jsonl or
+// project/subagents/file.jsonl); the legacy YYYY/MM/DD nesting is gone.
 func (l *Loader) extractProjectPath(filePath string) string {
-	// Extract project path from file path
-	// File path format: /path/to/claude/projects/project-name/YYYY/MM/DD/file.jsonl
-	// We want to return the full path including project-name
-	
-	// Remove the filename first
 	dir := filepath.Dir(filePath)
 	parts := strings.Split(dir, string(os.PathSeparator))
-	
-	// Find "projects" directory and include everything up to and including the project
-	for i := 0; i < len(parts); i++ {
-		if parts[i] == "projects" && i+1 < len(parts) {
-			// Check if the structure after projects looks like project/YYYY/MM/DD
-			// If so, we want to include the project directory
-			if i+4 < len(parts) {
-				// Check if parts[i+2], parts[i+3], parts[i+4] look like YYYY/MM/DD
-				possibleYear := parts[i+2]
-				possibleMonth := parts[i+3]
-				possibleDay := parts[i+4]
-				
-				if isNumeric(possibleYear) && len(possibleYear) == 4 &&
-				   isNumeric(possibleMonth) && len(possibleMonth) <= 2 &&
-				   isNumeric(possibleDay) && len(possibleDay) <= 2 {
-					// This looks like the expected structure
-					// Return path up to and including the project directory
-					projectPath := strings.Join(parts[:i+2], string(os.PathSeparator))
-					return projectPath
-				}
-			}
-			// Otherwise just return up to the project directory
-			projectPath := strings.Join(parts[:i+2], string(os.PathSeparator))
-			return projectPath
+
+	for i, p := range parts {
+		if p == "projects" && i+1 < len(parts) {
+			return strings.Join(parts[:i+2], string(os.PathSeparator))
 		}
 	}
-	
-	// If no "projects" directory, look for common project patterns
-	// Remove date structure from the end if present (YYYY/MM/DD)
-	if len(parts) >= 3 {
-		// Check last 3 parts for date pattern
-		possibleYear := parts[len(parts)-3]
-		possibleMonth := parts[len(parts)-2]
-		possibleDay := parts[len(parts)-1]
-		
-		if isNumeric(possibleYear) && len(possibleYear) == 4 &&
-		   isNumeric(possibleMonth) && len(possibleMonth) <= 2 &&
-		   isNumeric(possibleDay) && len(possibleDay) <= 2 {
-			// Remove date parts to get project directory
-			projectPath := strings.Join(parts[:len(parts)-3], string(os.PathSeparator))
-			return projectPath
-		}
+
+	// Fallback: trim trailing "subagents" if present so that subagent files
+	// still report the parent project path.
+	if len(parts) > 0 && parts[len(parts)-1] == "subagents" {
+		return strings.Join(parts[:len(parts)-1], string(os.PathSeparator))
 	}
-	
-	// Fallback: return the directory path as is
 	return dir
 }
 
-func isNumeric(s string) bool {
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return len(s) > 0
+// calculateTotalTokens matches TypeScript's getTotalTokens function.
+// Reads first-class cache token fields populated by validateUsageData.
+func (l *Loader) calculateTotalTokens(entry *types.UsageEntry) {
+	entry.TotalTokens = entry.InputTokens + entry.OutputTokens +
+		entry.CacheCreationInputTokens + entry.CacheReadInputTokens
 }
 
-// calculateTotalTokens matches TypeScript's getTotalTokens function
-func (l *Loader) calculateTotalTokens(entry *types.UsageEntry) {
-	total := entry.InputTokens + entry.OutputTokens
-	
-	// Add cache tokens if present
-	if entry.Raw != nil {
-		if cc, ok := entry.Raw["cache_creation_input_tokens"].(int); ok {
-			total += cc
-		}
-		if cr, ok := entry.Raw["cache_read_input_tokens"].(int); ok {
-			total += cr
-		}
-	}
-	
-	entry.TotalTokens = total
+// nonUsageEntryTypes lists JSONL entry types that legitimately have no
+// message.usage payload. They must not be counted as parse errors when
+// validateUsageData rejects them.
+var nonUsageEntryTypes = map[string]bool{
+	"user":                  true,
+	"summary":               true,
+	"attachment":            true,
+	"system":                true,
+	"last-prompt":           true,
+	"file-history-snapshot": true,
+	"permission-mode":       true,
+	"agent-setting":         true,
+	"queue-operation":       true,
+	"ai-title":              true,
 }
 
 // shouldCountAsParseError determines if an error should be counted as parse error
 func (l *Loader) shouldCountAsParseError(err error, raw map[string]interface{}) bool {
 	errMsg := err.Error()
-	
-	// Don't count as parse error if it's just missing usage data for non-assistant types
-	if strings.Contains(errMsg, "missing required message.usage object") {
-		// Check if this might be a user or summary type that legitimately doesn't have usage
+
+	if strings.Contains(errMsg, "missing required message.usage object") ||
+		strings.Contains(errMsg, "missing required message object") {
 		if typeStr, ok := raw["type"].(string); ok {
-			if typeStr == "user" || typeStr == "summary" {
-				return false // These types legitimately don't have usage data
-			}
-		}
-	}
-	
-	// Don't count as parse error if it's missing message object entirely (like summary entries)
-	if strings.Contains(errMsg, "missing required message object") {
-		if typeStr, ok := raw["type"].(string); ok {
-			if typeStr == "summary" {
+			if nonUsageEntryTypes[typeStr] {
 				return false
 			}
 		}
 	}
-	
-	// All other errors should be counted
+
 	return true
 }

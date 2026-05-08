@@ -158,13 +158,8 @@ func (f *TableWriterFormatter) FormatDailyReportWithFilter(entries []types.Usage
 				models[entry.Model] = true
 			}
 
-			// Get cache values from Raw
-			if cc, ok := entry.Raw["cache_creation_input_tokens"].(int); ok {
-				cache += cc
-			}
-			if cr, ok := entry.Raw["cache_read_input_tokens"].(int); ok {
-				cacheRead += cr
-			}
+			cache += entry.CacheCreationInputTokens
+			cacheRead += entry.CacheReadInputTokens
 		}
 
 		// Calculate total tokens including cache (matches TypeScript's getTotalTokens)
@@ -420,15 +415,8 @@ func (f *TableWriterFormatter) FormatMonthlyReportWithFilter(entries []types.Usa
 				totalSessionSet[entry.SessionID] = true
 			}
 
-			// Track cache tokens from Raw data
-			if entry.Raw != nil {
-				if cc, ok := entry.Raw["cache_creation_input_tokens"].(int); ok {
-					monthCache += cc
-				}
-				if cr, ok := entry.Raw["cache_read_input_tokens"].(int); ok {
-					monthCacheRead += cr
-				}
-			}
+			monthCache += entry.CacheCreationInputTokens
+			monthCacheRead += entry.CacheReadInputTokens
 
 			// Skip synthetic model in display (but still count its tokens/cost)
 			if entry.Model != "" && entry.Model != "<synthetic>" {

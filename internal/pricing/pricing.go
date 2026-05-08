@@ -22,7 +22,19 @@ type ModelPricing struct {
 	OutputCostPerToken             float64 `json:"output_cost_per_token"`
 	CacheCreationInputTokenCost    float64 `json:"cache_creation_input_token_cost"`
 	CacheReadInputTokenCost        float64 `json:"cache_read_input_token_cost"`
+	// server_tool_use per-request charges (Anthropic web tools).
+	// LiteLLM does not yet publish these; loaded from embedded defaults.
+	WebSearchCostPerRequest float64 `json:"web_search_cost_per_request,omitempty"`
+	WebFetchCostPerRequest  float64 `json:"web_fetch_cost_per_request,omitempty"`
 }
+
+// AnthropicWebSearchCostPerRequest is Anthropic's published price for one
+// web_search server-tool call. Update if Anthropic changes the rate.
+const AnthropicWebSearchCostPerRequest = 0.01
+
+// AnthropicWebFetchCostPerRequest is Anthropic's published price for one
+// web_fetch server-tool call (currently unbilled; reserved for future use).
+const AnthropicWebFetchCostPerRequest = 0.0
 
 // LiteLLM uses direct model name mapping, not nested data structure
 type LiteLLMResponse map[string]ModelPricing
@@ -37,29 +49,46 @@ func NewService() *Service {
 	}
 }
 
-func (s *Service) GetModelPrice(ctx context.Context, model string) (inputPrice, outputPrice, cacheCreatePrice, cacheReadPrice float64, err error) {
+func (s *Service) GetModelPrice(ctx context.Context, model string) (
+	inputPrice, outputPrice, cacheCreatePrice, cacheReadPrice,
+	webSearchPrice, webFetchPrice float64, err error,
+) {
 	s.cacheMux.RLock()
 	if pricing, exists := s.cache[model]; exists && time.Since(s.cacheTime) < s.cacheTTL {
 		s.cacheMux.RUnlock()
-		return pricing.InputCostPerToken, pricing.OutputCostPerToken, pricing.CacheCreationInputTokenCost, pricing.CacheReadInputTokenCost, nil
+		return pricing.InputCostPerToken, pricing.OutputCostPerToken,
+			pricing.CacheCreationInputTokenCost, pricing.CacheReadInputTokenCost,
+			webPriceOrDefault(pricing.WebSearchCostPerRequest, AnthropicWebSearchCostPerRequest),
+			webPriceOrDefault(pricing.WebFetchCostPerRequest, AnthropicWebFetchCostPerRequest),
+			nil
 	}
 	s.cacheMux.RUnlock()
 
-	// Try to refresh cache
 	if err := s.refreshCache(ctx); err != nil {
-		// Fall back to embedded pricing if API fails
 		return s.getEmbeddedPricing(model)
 	}
 
 	s.cacheMux.RLock()
 	if pricing, exists := s.cache[model]; exists {
 		s.cacheMux.RUnlock()
-		return pricing.InputCostPerToken, pricing.OutputCostPerToken, pricing.CacheCreationInputTokenCost, pricing.CacheReadInputTokenCost, nil
+		return pricing.InputCostPerToken, pricing.OutputCostPerToken,
+			pricing.CacheCreationInputTokenCost, pricing.CacheReadInputTokenCost,
+			webPriceOrDefault(pricing.WebSearchCostPerRequest, AnthropicWebSearchCostPerRequest),
+			webPriceOrDefault(pricing.WebFetchCostPerRequest, AnthropicWebFetchCostPerRequest),
+			nil
 	}
 	s.cacheMux.RUnlock()
 
-	// Model not found, return embedded pricing
 	return s.getEmbeddedPricing(model)
+}
+
+// webPriceOrDefault returns the configured price; if 0 (unconfigured / LiteLLM
+// not yet publishing the field), use the Anthropic published default.
+func webPriceOrDefault(configured, fallback float64) float64 {
+	if configured > 0 {
+		return configured
+	}
+	return fallback
 }
 
 func (s *Service) refreshCache(ctx context.Context) error {
@@ -91,7 +120,10 @@ func (s *Service) refreshCache(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) getEmbeddedPricing(model string) (inputPrice, outputPrice, cacheCreatePrice, cacheReadPrice float64, err error) {
+func (s *Service) getEmbeddedPricing(model string) (
+	inputPrice, outputPrice, cacheCreatePrice, cacheReadPrice,
+	webSearchPrice, webFetchPrice float64, err error,
+) {
 	// Embedded pricing for common models (per-token pricing matching TypeScript)
 	embeddedPricing := map[string]ModelPricing{
 		"claude-3-5-sonnet-20241022": {InputCostPerToken: 0.000003, OutputCostPerToken: 0.000015, CacheCreationInputTokenCost: 0.00000375, CacheReadInputTokenCost: 0.0000003},
@@ -121,10 +153,15 @@ func (s *Service) getEmbeddedPricing(model string) (inputPrice, outputPrice, cac
 	
 	for _, variant := range modelVariants {
 		if pricing, exists := embeddedPricing[variant]; exists {
-			return pricing.InputCostPerToken, pricing.OutputCostPerToken, pricing.CacheCreationInputTokenCost, pricing.CacheReadInputTokenCost, nil
+			return pricing.InputCostPerToken, pricing.OutputCostPerToken,
+				pricing.CacheCreationInputTokenCost, pricing.CacheReadInputTokenCost,
+				webPriceOrDefault(pricing.WebSearchCostPerRequest, AnthropicWebSearchCostPerRequest),
+				webPriceOrDefault(pricing.WebFetchCostPerRequest, AnthropicWebFetchCostPerRequest),
+				nil
 		}
 	}
 
 	// Default pricing for unknown models
-	return 0.000001, 0.000002, 0.0000025, 0.0000001, nil
+	return 0.000001, 0.000002, 0.0000025, 0.0000001,
+		AnthropicWebSearchCostPerRequest, AnthropicWebFetchCostPerRequest, nil
 }

@@ -118,15 +118,12 @@ func (c *Calculator) createBlock(startTime time.Time, entries []types.UsageEntry
 		tokenCounts.InputTokens += entry.InputTokens
 		tokenCounts.OutputTokens += entry.OutputTokens
 
-		// Extract cache tokens from Raw data if available
+		// First-class cache token fields (populated by loader)
+		tokenCounts.CacheCreationInputTokens += entry.CacheCreationInputTokens
+		tokenCounts.CacheReadInputTokens += entry.CacheReadInputTokens
+
+		// usage_limit_reset_time still lives in Raw (preserved by clearRawExceptCache)
 		if entry.Raw != nil {
-			if cc, ok := entry.Raw["cache_creation_input_tokens"].(int); ok {
-				tokenCounts.CacheCreationInputTokens += cc
-			}
-			if cr, ok := entry.Raw["cache_read_input_tokens"].(int); ok {
-				tokenCounts.CacheReadInputTokens += cr
-			}
-			// Check for usage limit reset time
 			if resetTime, ok := entry.Raw["usage_limit_reset_time"].(string); ok {
 				if t, err := time.Parse(time.RFC3339, resetTime); err == nil {
 					usageLimitResetTime = &t

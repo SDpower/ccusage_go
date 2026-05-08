@@ -12,14 +12,17 @@ import (
 
 // mockPricing implements PricingService for testing
 type mockPricing struct {
-	inputPrice      float64
-	outputPrice     float64
+	inputPrice       float64
+	outputPrice      float64
 	cacheCreatePrice float64
-	cacheReadPrice  float64
+	cacheReadPrice   float64
+	webSearchPrice   float64
+	webFetchPrice    float64
 }
 
-func (m *mockPricing) GetModelPrice(ctx context.Context, model string) (float64, float64, float64, float64, error) {
-	return m.inputPrice, m.outputPrice, m.cacheCreatePrice, m.cacheReadPrice, nil
+func (m *mockPricing) GetModelPrice(ctx context.Context, model string) (float64, float64, float64, float64, float64, float64, error) {
+	return m.inputPrice, m.outputPrice, m.cacheCreatePrice, m.cacheReadPrice,
+		m.webSearchPrice, m.webFetchPrice, nil
 }
 
 func TestCalculateCostSeparatesAPICost(t *testing.T) {
@@ -33,13 +36,11 @@ func TestCalculateCostSeparatesAPICost(t *testing.T) {
 
 	entries := []types.UsageEntry{
 		{
-			Model:        "claude-sonnet-4-5-20250514",
-			InputTokens:  100,
-			OutputTokens: 50,
-			Raw: map[string]interface{}{
-				"cache_creation_input_tokens": 200,
-				"cache_read_input_tokens":     500,
-			},
+			Model:                    "claude-sonnet-4-5-20250514",
+			InputTokens:              100,
+			OutputTokens:             50,
+			CacheCreationInputTokens: 200,
+			CacheReadInputTokens:     500,
 		},
 	}
 
@@ -332,24 +333,27 @@ func TestAggregateBySourceFile(t *testing.T) {
 			SourceFile:  "/data/main.jsonl",
 			Model:       "claude-sonnet-4-5-20250514",
 			InputTokens: 100, OutputTokens: 50, TotalTokens: 150,
-			Cost: 1.0,
-			Raw:  map[string]interface{}{"cache_creation_input_tokens": 500, "cache_read_input_tokens": 2000},
+			Cost:                     1.0,
+			CacheCreationInputTokens: 500,
+			CacheReadInputTokens:     2000,
 		},
 		{
 			Timestamp:   ts.Add(time.Minute),
 			SourceFile:  "/data/main.jsonl",
 			Model:       "claude-opus-4-6-20250514",
 			InputTokens: 200, OutputTokens: 100, TotalTokens: 300,
-			Cost: 2.0,
-			Raw:  map[string]interface{}{"cache_creation_input_tokens": 1000, "cache_read_input_tokens": 3000},
+			Cost:                     2.0,
+			CacheCreationInputTokens: 1000,
+			CacheReadInputTokens:     3000,
 		},
 		{
 			Timestamp:   ts.Add(2 * time.Minute),
 			SourceFile:  "/data/subagents/agent-abc.jsonl",
 			Model:       "claude-sonnet-4-5-20250514",
 			InputTokens: 50, OutputTokens: 25, TotalTokens: 75,
-			Cost: 0.5,
-			Raw:  map[string]interface{}{"cache_creation_input_tokens": 200, "cache_read_input_tokens": 800},
+			Cost:                     0.5,
+			CacheCreationInputTokens: 200,
+			CacheReadInputTokens:     800,
 		},
 	}
 

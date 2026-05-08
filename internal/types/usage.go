@@ -4,6 +4,13 @@ import (
 	"time"
 )
 
+// CacheMissReason captures Anthropic's diagnostics.cache_miss_reason payload
+// (added 2026-Q2). Useful for explaining sudden cost spikes.
+type CacheMissReason struct {
+	Type                    string `json:"type"`
+	CacheMissedInputTokens  int    `json:"cache_missed_input_tokens"`
+}
+
 type UsageEntry struct {
 	ID           string                 `json:"id"`
 	Timestamp    time.Time              `json:"timestamp"`
@@ -12,16 +19,30 @@ type UsageEntry struct {
 	Model        string                 `json:"model"`
 	InputTokens  int                    `json:"input_tokens"`
 	OutputTokens int                    `json:"output_tokens"`
+	// First-class cache token fields (replaces Raw["cache_*"] indirection)
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
 	TotalTokens  int                    `json:"total_tokens"`
 	Cost         float64                `json:"cost,omitempty"`
 	APICost        float64                `json:"api_cost,omitempty"`  // input + output only, no cache
 	CacheCreateCost float64               `json:"cache_create_cost,omitempty"`
 	CacheReadCost  float64                `json:"cache_read_cost,omitempty"`
+	// server_tool_use billing fields (Anthropic web tools)
+	WebSearchRequests int     `json:"web_search_requests,omitempty"`
+	WebFetchRequests  int     `json:"web_fetch_requests,omitempty"`
+	WebSearchCost     float64 `json:"web_search_cost,omitempty"`
+	WebFetchCost      float64 `json:"web_fetch_cost,omitempty"`
 	SessionID      string                 `json:"session_id"`
 	SessionName  string                 `json:"session_name,omitempty"`
 	BlockType    string                 `json:"block_type,omitempty"`
-	SourceFile   string                 `json:"-"`
-	Raw          map[string]interface{} `json:"-"`
+	// Conversation-tree metadata; loader keeps these for breakdown reporting
+	// but never filters on IsSidechain (sub-agent calls are independently billed).
+	IsSidechain bool `json:"is_sidechain,omitempty"`
+	IsMeta      bool `json:"is_meta,omitempty"`
+	// Optional Anthropic cache-miss diagnostic
+	CacheMissReason *CacheMissReason       `json:"cache_miss_reason,omitempty"`
+	SourceFile      string                 `json:"-"`
+	Raw             map[string]interface{} `json:"-"`
 }
 
 type UsageReport struct {
