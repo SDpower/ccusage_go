@@ -2,6 +2,67 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.14.0] - 2026-05-08
+
+### 🐛 Bug Fixes
+
+- **fix(loader)**：修正 filter 模式（`live monitor` / `--modified-within` / `--only-active`）漏掃 `subagents/` 子目錄
+  - 實測差距：21,775 entries、4,711,090 output tokens；sub-agent JSONL 占資料夾 53%
+  - `collectProjectFiles` 對名為 `subagents` 的子目錄遞迴一層（新增 `collectSubagentFiles`）
+  - `shouldSkipProject` 同步偵測 subagents 內活動，避免整個 project 被誤判為 inactive 而 skip
+  - `IncrementalCache.Update` 列舉 + mtime 比對涵蓋 subagents/，live 增量快取相容
+
+### ✨ Features
+
+- **feat(types)**：`UsageEntry` 新增 first-class 欄位
+  - `CacheCreationInputTokens` / `CacheReadInputTokens`：取代 `Raw["cache_*"]` 間接存取
+  - `IsSidechain` / `IsMeta`：保留對話樹 metadata 供 breakdown 報表使用（不過濾、不影響計費）
+  - `WebSearchRequests` / `WebFetchRequests` / `WebSearchCost` / `WebFetchCost`：server_tool_use 計費
+  - `CacheMissReason`：新結構，承載 Anthropic `diagnostics.cache_miss_reason` 診斷資料
+- **feat(loader)**：nested `usage.cache_creation` fallback
+  - 當 flat `cache_creation_input_tokens` 缺值時，讀取 nested `ephemeral_1h_input_tokens + ephemeral_5m_input_tokens` 加總
+  - 為 Anthropic 未來移除 flat 欄位預先相容；目前 flat 與 nested 同值，flat 優先
+- **feat(pricing)**：server_tool_use 計費機制
+  - `PricingService.GetModelPrice` 簽章新增 `webSearchPrice` / `webFetchPrice` 兩個回傳值
+  - `ModelPricing` 結構新增 `WebSearchCostPerRequest` / `WebFetchCostPerRequest` 欄位
+  - Embedded 預設採 Anthropic 公告值：web_search $0.01/req、web_fetch $0/req（保留升級空間）
+- **feat(calculator)**：`calculateSingleCost` 改讀 first-class 欄位，並計入 web_search / web_fetch 費用至 `Cost`（不計入 `APICost`）
+- **feat(loader)**：`ai-title` 納入 SessionName 第三順位來源
+  - 優先序：custom-title > agent-name > ai-title
+- **feat(loader)**：`message.diagnostics.cache_miss_reason` 萃取至 `entry.CacheMissReason`
+
+### 🔧 Refactoring
+
+- **refactor(loader)**：抽出 `clearRawExceptKeys(entry, keep)` helper，統一 stream / 非 stream / project_cache 三處 Raw 清理邏輯，`usage_limit_reset_time` 在所有路徑一致保留
+- **refactor(loader)**：`shouldCountAsParseError` 集中宣告 `nonUsageEntryTypes` 白名單，新增 `attachment` / `system` / `last-prompt` / `file-history-snapshot` / `permission-mode` / `agent-setting` / `queue-operation` / `ai-title`，避免合法 type 被誤計入 parseErrors
+- **refactor(loader)**：`extractProjectPath` 移除 YYYY/MM/DD dead code 分支與未使用的 `isNumeric`；補上 subagents/ 父目錄 fallback
+- **refactor(calculator/output)**：全 repo 移除 `Raw["cache_*"]` 取用，改讀 first-class 欄位（`blocks.go` / `tablewriter_formatter.go` / `calculator.go`）
+
+### ⚠️ Breaking Changes
+
+- **`pricing.PricingService.GetModelPrice` 簽章變更**：回傳值從 4 個 float64 + error 改為 6 個 float64 + error（新增 webSearchPrice、webFetchPrice）
+- **`calculator.PricingService` 介面**：同步擴張；任何實作此介面的下游程式需更新
+
+### 🧪 Tests
+
+- 新增 `internal/loader/subagents_test.go`（4 個測試）：filter 模式遞迴、預設模式對齊、IncrementalCache 偵測、shouldSkipProject 偵測
+- 新增 `internal/loader/usage_schema_test.go`（11 個測試）：nested cache_creation、ai-title 優先序、usage_limit_reset_time 保留、server_tool_use、IsSidechain、parseError 白名單、CacheMissReason
+- 新增 `internal/calculator/calculator_test.go`（3 個測試）：first-class cache 欄位、server_tool_use 費用、SessionReport 聚合
+- 既有 `session_report_test.go` 同步遷移至 first-class 欄位
+
+### 📁 Files Changed
+
+- `internal/types/usage.go`
+- `internal/loader/loader.go`
+- `internal/loader/project_cache.go`
+- `internal/pricing/pricing.go`
+- `internal/calculator/calculator.go`
+- `internal/calculator/blocks.go`
+- `internal/output/tablewriter_formatter.go`
+- 對應測試檔（calculator_test.go / subagents_test.go / usage_schema_test.go / session_report_test.go）
+
+---
+
 ## [v0.13.0] - 2026-04-06
 
 ### ✨ Features

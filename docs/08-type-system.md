@@ -1,5 +1,48 @@
 # 類型系統設計
 
+> **v0.14.0 增訂（2026-05-08）**
+>
+> ### `UsageEntry` 新增欄位
+>
+> ```go
+> type UsageEntry struct {
+>     // ...既有欄位...
+>
+>     // First-class cache token fields (取代 Raw["cache_*"] 間接存取)
+>     CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+>     CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
+>
+>     // server_tool_use 計費（Anthropic web tools）
+>     WebSearchRequests int     `json:"web_search_requests,omitempty"`
+>     WebFetchRequests  int     `json:"web_fetch_requests,omitempty"`
+>     WebSearchCost     float64 `json:"web_search_cost,omitempty"`
+>     WebFetchCost      float64 `json:"web_fetch_cost,omitempty"`
+>
+>     // 對話樹 metadata（不過濾、僅供 breakdown 報表使用）
+>     IsSidechain bool `json:"is_sidechain,omitempty"`
+>     IsMeta      bool `json:"is_meta,omitempty"`
+>
+>     // Anthropic 提供的快取未命中診斷
+>     CacheMissReason *CacheMissReason `json:"cache_miss_reason,omitempty"`
+> }
+> ```
+>
+> ### 新增結構：`CacheMissReason`
+>
+> ```go
+> type CacheMissReason struct {
+>     Type                   string `json:"type"`
+>     CacheMissedInputTokens int    `json:"cache_missed_input_tokens"`
+> }
+> ```
+>
+> 由 loader 從 `message.diagnostics.cache_miss_reason` 萃取；對診斷 cost 飆高有幫助。
+>
+> ### 設計原則重申
+>
+> - **`IsSidechain` 永不作為過濾條件**：sub-agent 為獨立 API request、獨立計費，loader 必須加總；欄位僅供報表分組顯示。
+> - **cache token 不再走 Raw**：`Raw["cache_*"]` 已從 loader / calculator / output 全鏈路移除；`Raw` 現在僅保留 `usage_limit_reset_time` 一個鍵（由 `clearRawExceptKeys` helper 統一管理）。
+
 ## 1. 模組概述
 
 類型系統模組定義了整個應用程式的核心資料結構和類型，確保類型安全和資料一致性。這個模組使用 Go 的強類型特性，實作類似 TypeScript branded types 的類型安全機制。

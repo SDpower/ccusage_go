@@ -1,5 +1,37 @@
 # 成本計算模組設計
 
+> **v0.14.0 增訂（2026-05-08）**
+>
+> ### PricingService 介面變更（Breaking）
+>
+> `pricing.PricingService.GetModelPrice` 與 `calculator.PricingService` 介面同步擴張，回傳值由 4 個 float64 + error 改為 6 個 float64 + error：
+>
+> ```go
+> GetModelPrice(ctx context.Context, model string) (
+>     inputPrice, outputPrice, cacheCreatePrice, cacheReadPrice,
+>     webSearchPrice, webFetchPrice float64,
+>     err error,
+> )
+> ```
+>
+> 任何下游程式（透過 `pkg/ccusage` 公開 API 直接呼叫此介面者）需同步更新。
+>
+> ### server_tool_use 計費機制
+>
+> Anthropic 對 server-tool 採 per-request 計費，loader 會從 `usage.server_tool_use.{web_search_requests, web_fetch_requests}` 讀入 `entry.WebSearchRequests` / `entry.WebFetchRequests`。
+>
+> `calculateSingleCost` 行為：
+>
+> - **`entry.APICost`** = 僅 input + output tokens 費用（**不含** server_tool_use）
+> - **`entry.Cost`** = APICost + cache_create + cache_read + **web_search_cost + web_fetch_cost**
+> - 個別欄位 `entry.WebSearchCost` = `WebSearchRequests * webSearchPrice`、`entry.WebFetchCost` = `WebFetchRequests * webFetchPrice`
+>
+> Embedded fallback 採 Anthropic 公告值（`pricing.AnthropicWebSearchCostPerRequest = 0.01`、`AnthropicWebFetchCostPerRequest = 0.0`）；LiteLLM 尚未公布該欄位時走 fallback。
+>
+> ### first-class cache 欄位
+>
+> 計算改讀 `entry.CacheCreationInputTokens` / `entry.CacheReadInputTokens`，不再透過 `entry.Raw["cache_*"]`；nested `usage.cache_creation` fallback 由 loader 處理（見 `02-data-processing.md`）。
+
 ## 1. 模組概述
 
 成本計算模組負責精確計算各種 Claude 模型的使用成本，包括輸入/輸出 token、快取創建/讀取的費用計算。模組支援動態獲取最新價格資訊，並提供離線模式支援。

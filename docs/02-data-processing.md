@@ -1,5 +1,18 @@
 # 資料處理模組設計
 
+> **v0.14.0 增訂（2026-05-08）**
+>
+> 1. **subagents/ 子目錄處理**：Anthropic CLI 將 sub-agent 對話分流寫入 `~/.claude/projects/<project>/subagents/agent-*.jsonl`（占整體 JSONL 大小約 53%）。
+>    - 預設 `LoadFromPath`：`filepath.Walk` 已遞迴掃入。
+>    - filter 模式（`live monitor` / `--modified-within` / `--only-active`）：`collectProjectFiles` 對名為 `subagents` 的子目錄遞迴一層（`collectSubagentFiles`），`shouldSkipProject` 也會檢查 subagents 內 mtime；live `IncrementalCache` 以 `subagents/<file>` key 追蹤狀態。
+>    - sub-agent entry 之 `isSidechain=true` 但**獨立計費**，loader 永不過濾、僅保留為 `entry.IsSidechain` 供 breakdown 使用。
+> 2. **`usage.cache_creation` nested fallback**：當 flat `cache_creation_input_tokens` 缺值時，讀取 nested `ephemeral_1h_input_tokens + ephemeral_5m_input_tokens` 加總；目前兩者同值，flat 優先。
+> 3. **`server_tool_use` 萃取**：assistant entry 的 `usage.server_tool_use.{web_search_requests, web_fetch_requests}` 寫入 `entry.WebSearchRequests` / `entry.WebFetchRequests`（計費見 `04-cost-calculation.md`）。
+> 4. **`message.diagnostics.cache_miss_reason`**：寫入 `entry.CacheMissReason`（`*types.CacheMissReason`），含 `Type` 與 `CacheMissedInputTokens`。
+> 5. **SessionName 第三順位**：原 custom-title > agent-name 之外，新增 `ai-title`（`raw["aiTitle"]`）作第三來源。
+> 6. **`shouldCountAsParseError` 白名單**：集中宣告 `nonUsageEntryTypes`，新增 `attachment` / `system` / `last-prompt` / `file-history-snapshot` / `permission-mode` / `agent-setting` / `queue-operation` / `ai-title`，避免合法 type 被誤計入 parseErrors。
+> 7. **Raw 清理統一**：抽出 `clearRawExceptKeys(entry, keep)` helper，stream / 非 stream / project_cache 三處共用，`usage_limit_reset_time` 在所有路徑一致保留。
+
 ## 1. 模組概述
 
 資料處理模組負責從本地檔案系統讀取 Claude Code 的使用數據（JSONL 格式），解析並轉換為內部資料結構，是整個系統的數據基礎。
